@@ -14,8 +14,10 @@
 // Authors: Nima Zardoshti, Jochen Klein
 
 #include "PWGJE/TableProducer/jetfinder.h"
+#include "Common/Core/RecoDecay.h"
 
 using namespace o2;
+using namespace o2::analysis;
 using namespace o2::framework;
 using namespace o2::framework::expressions;
 
@@ -92,7 +94,7 @@ struct JetFinderHFTask {
   Configurable<bool> DoRhoAreaSub{"DoRhoAreaSub", false, "do rho area subtraction"};
   Configurable<bool> DoConstSub{"DoConstSub", false, "do constituent subtraction"};
 
-  Service<o2::framework::O2DatabasePDG> pdg;
+  Service<o2::framework::O2DatabasePDG> pdgDatabase;
   std::string trackSelection;
   std::string eventSelection;
   std::string particleSelection;
@@ -100,8 +102,8 @@ struct JetFinderHFTask {
   JetFinder jetFinder;
   std::vector<fastjet::PseudoJet> inputParticles;
 
-  int candPDG;
   int candDecay;
+  double candMass;
 
   void init(InitContext const&)
   {
@@ -122,21 +124,24 @@ struct JetFinderHFTask {
     jetFinder.jetPtMax = jetPtMax;
     jetFinder.jetEtaMin = jetEtaMin;
     jetFinder.jetEtaMax = jetEtaMax;
+    if (jetEtaMin < -98.0) {
+      jetFinder.jetEtaDefault = true;
+    }
     jetFinder.algorithm = static_cast<fastjet::JetAlgorithm>(static_cast<int>(jetAlgorithm));
     jetFinder.recombScheme = static_cast<fastjet::RecombinationScheme>(static_cast<int>(jetRecombScheme));
     jetFinder.ghostArea = jetGhostArea;
     jetFinder.ghostRepeatN = ghostRepeat;
 
     if constexpr (std::is_same_v<std::decay_t<CandidateTableData>, CandidatesD0Data>) { // Note : need to be careful if configurable workflow options are added later
-      candPDG = static_cast<int>(pdg::Code::kD0);
+      candMass = pdg::MassD0;
       candDecay = static_cast<int>(aod::hf_cand_2prong::DecayType::D0ToPiK);
     }
     if constexpr (std::is_same_v<std::decay_t<CandidateTableData>, CandidatesBplusData>) {
-      candPDG = static_cast<int>(pdg::Code::kBPlus);
+      candMass = pdg::MassBPlus;
       candDecay = static_cast<int>(aod::hf_cand_bplus::DecayType::BplusToD0Pi);
     }
     if constexpr (std::is_same_v<std::decay_t<CandidateTableData>, CandidatesLcData>) {
-      candPDG = static_cast<int>(pdg::Code::kLambdaCPlus);
+      candMass = pdg::MassLambdaCPlus;
       candDecay = static_cast<int>(aod::hf_cand_3prong::DecayType::LcToPKPi);
     }
   }
@@ -161,7 +166,7 @@ struct JetFinderHFTask {
 
     for (auto& candidate : candidates) {
       inputParticles.clear();
-      if (!analyseCandidate(inputParticles, candPDG, candPtMin, candPtMax, candYMin, candYMax, candidate)) {
+      if (!analyseCandidate(inputParticles, candMass, candPtMin, candPtMax, candYMin, candYMax, candidate)) {
         continue;
       }
       analyseTracks(inputParticles, tracks, trackSelection, std::optional{candidate});
@@ -179,7 +184,7 @@ struct JetFinderHFTask {
 
     for (auto& candidate : candidates) {
       inputParticles.clear();
-      if (!analyseCandidateMC(inputParticles, candPDG, candDecay, candPtMin, candPtMax, candYMin, candYMax, candidate, rejectBackgroundMCCandidates)) {
+      if (!analyseCandidateMC(inputParticles, candMass, candDecay, candPtMin, candPtMax, candYMin, candYMax, candidate, rejectBackgroundMCCandidates)) {
         continue;
       }
       analyseTracks(inputParticles, tracks, trackSelection, std::optional{candidate});
@@ -197,7 +202,7 @@ struct JetFinderHFTask {
 
     for (auto const& particle : particles) {
       if (std::abs(particle.flagMcMatchGen()) & (1 << candDecay)) {
-        auto particleY = RecoDecay::y(std::array{particle.px(), particle.py(), particle.pz()}, RecoDecay::getMassPDG(particle.pdgCode()));
+        auto particleY = RecoDecay::y(std::array{particle.px(), particle.py(), particle.pz()}, pdgDatabase->Mass(particle.pdgCode()));
         if (particleY < candYMin || particleY > candYMax) {
           continue;
         }
@@ -208,8 +213,8 @@ struct JetFinderHFTask {
       }
     }
     for (auto& candidate : candidates) {
-      analyseParticles(inputParticles, particleSelection, trackEtaMin, trackEtaMax, jetTypeParticleLevel, particles, pdg->Instance(), std::optional{candidate});
-      FastJetUtilities::fillTracks(candidate, inputParticles, candidate.globalIndex(), static_cast<int>(JetConstituentStatus::candidateHF), RecoDecay::getMassPDG(candidate.pdgCode()));
+      analyseParticles(inputParticles, particleSelection, jetTypeParticleLevel, particles, pdgDatabase, std::optional{candidate});
+      FastJetUtilities::fillTracks(candidate, inputParticles, candidate.globalIndex(), static_cast<int>(JetConstituentStatus::candidateHF), pdgDatabase->Mass(candidate.pdgCode()));
       findJets(jetFinder, inputParticles, jetRadius, collision, jetsTable, constituentsTable, constituentsSubTable, DoConstSub, true);
     }
   }

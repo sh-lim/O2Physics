@@ -56,6 +56,10 @@ if(FastJet_FOUND)
                         SOURCES jetfinderhfQA.cxx
                         PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore
                         COMPONENT_NAME Analysis)
+    o2physics_add_dpl_workflow(jet-finder-full-qa
+                        SOURCES jetfinderfullQA.cxx
+                        PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore
+                        COMPONENT_NAME Analysis)
     o2physics_add_dpl_workflow(trigger-correlations
                         SOURCES triggerCorrelations.cxx
                         PUBLIC_LINK_LIBRARIES O2::Framework O2::EMCALBase O2::EMCALCalib O2Physics::PWGJECore O2Physics::AnalysisCore
@@ -82,6 +86,14 @@ if(FastJet_FOUND)
                         COMPONENT_NAME Analysis)
     o2physics_add_dpl_workflow(jet-tutorial-skeleton
                         SOURCES jetTutorialSkeleton.cxx
+                        PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore
+                        COMPONENT_NAME Analysis)
+    o2physics_add_dpl_workflow(track-jet-qa
+                        SOURCES trackJetqa.cxx
+                        PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore
+                        COMPONENT_NAME Analysis)
+    o2physics_add_dpl_workflow(jet-nsubjettiness
+                        SOURCES nSubjettiness.cxx
                         PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore
                         COMPONENT_NAME Analysis)
 endif()

@@ -14,6 +14,8 @@
 /// \author Hirak Kumar Koley <hirak.koley@cern.ch>
 
 #include <TLorentzVector.h>
+#include <TDatabasePDG.h> // FIXME
+#include <TPDGCode.h>     // FIXME
 #include "Framework/runDataProcessing.h"
 #include "Framework/AnalysisTask.h"
 #include "PWGLF/DataModel/LFResonanceTables.h"
@@ -202,8 +204,8 @@ struct lambda1520analysis {
     }
   }
 
-  double massKa = TDatabasePDG::Instance()->GetParticle(kKMinus)->Mass();
-  double massPr = TDatabasePDG::Instance()->GetParticle(kProton)->Mass();
+  double massKa = TDatabasePDG::Instance()->GetParticle(kKMinus)->Mass(); // FIXME: Get from the common header
+  double massPr = TDatabasePDG::Instance()->GetParticle(kProton)->Mass(); // FIXME: Get from the common header
 
   template <typename TrackType>
   bool trackCut(const TrackType track)
@@ -298,8 +300,8 @@ struct lambda1520analysis {
       // Trk1: Proton, Trk2: Kaon
       bool isTrk1Selected{true}, isTrk2Selected{true}; //, isTrk1hasTOF{false}, isTrk2hasTOF{false};
 
-      auto isTrk1hasTOF = ((trk1.tofPIDselectionFlag() & aod::resodaughter::kHasTOF) == aod::resodaughter::kHasTOF) ? true : false;
-      auto isTrk2hasTOF = ((trk2.tofPIDselectionFlag() & aod::resodaughter::kHasTOF) == aod::resodaughter::kHasTOF) ? true : false;
+      auto isTrk1hasTOF = trk1.hasTOF();
+      auto isTrk2hasTOF = trk2.hasTOF();
 
       auto trk1ptPr = trk1.pt();
       auto trk1NSigmaPrTPC = trk1.tpcNSigmaPr();
@@ -532,7 +534,7 @@ struct lambda1520analysis {
   PROCESS_SWITCH(lambda1520analysis, processData, "Process Event for data without partition", false);
 
   void processMC(aod::ResoCollision& collision,
-                 soa::Join<aod::ResoTracks, aod::ResoMCTracks> const& resotracks, aod::McParticles const& mcParticles)
+                 soa::Join<aod::ResoTracks, aod::ResoMCTracks> const& resotracks)
   {
     fillHistograms<true, false>(collision, resotracks, resotracks);
   }
@@ -567,10 +569,10 @@ struct lambda1520analysis {
 
   // Processing Event Mixing
   using BinningTypeVtxZT0M = ColumnBinningPolicy<aod::collision::PosZ, aod::resocollision::MultV0M>;
-  BinningTypeVtxZT0M colBinning{{CfgVtxBins, CfgMultBins}, true};
   void processME(o2::aod::ResoCollisions& collisions, aod::ResoTracks const& resotracks)
   {
     auto tracksTuple = std::make_tuple(resotracks);
+    BinningTypeVtxZT0M colBinning{{CfgVtxBins, CfgMultBins}, true};
     SameKindPair<aod::ResoCollisions, aod::ResoTracks, BinningTypeVtxZT0M> pairs{colBinning, nEvtMixing, -1, collisions, tracksTuple, &cache}; // -1 is the number of the bin to skip
 
     for (auto& [collision1, tracks1, collision2, tracks2] : pairs) {

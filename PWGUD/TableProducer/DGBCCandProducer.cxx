@@ -62,6 +62,9 @@ struct tracksWGTInBCs {
   void processBarrel(BCs const& bcs, CCs const& collisions, TCs const& tracks, ATs const& ambTracks)
   {
     // run number
+    if (bcs.size() <= 0) {
+      return;
+    }
     int rnum = bcs.iteratorAt(0).runNumber();
 
     // container to sort tracks with good timing according to their matching/closest BC
@@ -73,7 +76,7 @@ struct tracksWGTInBCs {
     for (auto const& track : tracks) {
       registry.get<TH1>(HIST("barrel/Tracks"))->Fill(0., 1.);
 
-      // is this track aPV track?
+      // is this track a PV track?
       if (track.isPVContributor()) {
         registry.get<TH1>(HIST("barrel/Tracks"))->Fill(1., 1.);
       }
@@ -96,17 +99,23 @@ struct tracksWGTInBCs {
 
           // compute the BC closest in time
           auto firstCompatibleBC = ambTracksSlice.begin().bc().begin().globalBC();
-          LOGF(debug, "Track time %f", track.trackTime());
+          LOGF(debug, "First compatible BC %d Track time %f", firstCompatibleBC, track.trackTime());
           closestBC = (uint64_t)(firstCompatibleBC +
                                  (track.trackTime() / o2::constants::lhc::LHCBunchSpacingNS));
         } else {
           // this track is not ambiguous, has hence a unique association to a collision/BC
+          if (!track.has_collision()) {
+            continue;
+          }
           auto collision = track.collision_as<CCs>();
+          if (!collision.has_foundBC()) {
+            continue;
+          }
           closestBC = collision.foundBC_as<BCs>().globalBC();
         }
 
         // update tracksInBCList
-        LOGF(debug, "Closest BC %d", closestBC);
+        LOGF(debug, "Updating tracksInBCList with %d", closestBC);
         tracksInBCList[closestBC].emplace_back((int32_t)track.globalIndex());
       }
     }
@@ -129,8 +138,8 @@ struct tracksWGTInBCs {
           break;
         }
       }
-      tracksWGTInBCs(indBCToSave, rnum, tracksInBC.first, tracksInBC.second);
       LOGF(debug, " BC %i/%u with %i tracks with good timing", indBCToSave, tracksInBC.first, tracksInBC.second.size());
+      tracksWGTInBCs(indBCToSave, rnum, tracksInBC.first, tracksInBC.second);
     }
     LOGF(debug, "barrel done");
   }
@@ -142,6 +151,9 @@ struct tracksWGTInBCs {
   void processForward(BCs& bcs, CCs& collisions, aod::FwdTracks& fwdTracks, aod::AmbiguousFwdTracks& ambFwdTracks)
   {
     // run number
+    if (bcs.size() <= 0) {
+      return;
+    }
     int rnum = bcs.iteratorAt(0).runNumber();
 
     // container to sort forward tracks according to their matching/closest BC
@@ -176,11 +188,18 @@ struct tracksWGTInBCs {
                                  (fwdTrack.trackTime() / o2::constants::lhc::LHCBunchSpacingNS));
         } else {
           // this track is not ambiguous, has hence a unique association to a collision/BC
+          if (!fwdTrack.has_collision()) {
+            continue;
+          }
           auto collision = fwdTrack.collision_as<CCs>();
-          closestBC = collision.bc_as<BCs>().globalBC();
+          if (!collision.has_foundBC()) {
+            continue;
+          }
+          closestBC = collision.foundBC_as<BCs>().globalBC();
         }
 
         // update tracksInBCList
+        LOGF(debug, "Updating fwdTracksInBCList with %d", closestBC);
         fwdTracksInBCList[closestBC].emplace_back((int32_t)fwdTrack.globalIndex());
       }
     }
@@ -205,7 +224,7 @@ struct tracksWGTInBCs {
       fwdTracksWGTInBCs(indBCToSave, rnum, fwdTracksInBC.first, fwdTracksInBC.second);
       LOGF(debug, " BC %i/%u with %i forward tracks with good timing", indBCToSave, fwdTracksInBC.first, fwdTracksInBC.second.size());
     }
-    LOGF(debug, "fwd done");
+    LOGF(debug, "forward done");
   }
   PROCESS_SWITCH(tracksWGTInBCs, processForward, "Process forward tracks", false);
 
@@ -221,6 +240,7 @@ struct DGBCCandProducer {
   // data tables
   Produces<aod::UDCollisions> outputCollisions;
   Produces<aod::UDCollisionsSels> outputCollisionsSels;
+  Produces<aod::UDCollsLabels> outputCollsLabels;
   Produces<aod::UDZdcs> outputZdcs;
   Produces<aod::UDTracks> outputTracks;
   Produces<aod::UDTracksCov> outputTracksCov;
@@ -228,6 +248,7 @@ struct DGBCCandProducer {
   Produces<aod::UDTracksPID> outputTracksPID;
   Produces<aod::UDTracksExtra> outputTracksExtra;
   Produces<aod::UDTracksFlags> outputTracksFlag;
+  Produces<aod::UDTracksLabels> outputTracksLabel;
 
   // get a DGCutparHolder
   DGCutparHolder diffCuts = DGCutparHolder();
@@ -258,7 +279,7 @@ struct DGBCCandProducer {
 
   // update UDTables
   template <typename TTracks>
-  void updateUDTables(bool onlyPV, uint64_t bcnum, int rnum, float vx, float vy, float vz,
+  void updateUDTables(bool onlyPV, int64_t colID, uint64_t bcnum, int rnum, float vx, float vy, float vz,
                       uint16_t const& ntrks, int8_t const& ncharge, float const& rtrwTOF,
                       TTracks const& tracks, upchelpers::FITInfo const& fitInfo)
   {
@@ -271,6 +292,7 @@ struct DGBCCandProducer {
                          fitInfo.BBFT0Apf, fitInfo.BBFT0Cpf, fitInfo.BGFT0Apf, fitInfo.BGFT0Cpf,
                          fitInfo.BBFV0Apf, fitInfo.BGFV0Apf,
                          fitInfo.BBFDDApf, fitInfo.BBFDDCpf, fitInfo.BGFDDApf, fitInfo.BGFDDCpf);
+    outputCollsLabels(colID);
 
     // update DGTracks tables
     for (auto const& track : tracks) {
@@ -327,6 +349,7 @@ struct DGBCCandProducer {
                       track.detectorMap());
     outputTracksFlag(track.has_collision(),
                      track.isPVContributor());
+    outputTracksLabel(track.globalIndex());
   }
 
   void init(InitContext& context)
@@ -384,7 +407,7 @@ struct DGBCCandProducer {
 
         auto colTracks = tracks.sliceByCached(aod::track::collisionId, col.globalIndex(), cache);
         auto colFwdTracks = fwdtracks.sliceByCached(aod::fwdtrack::collisionId, col.globalIndex(), cache);
-        auto bcRange = udhelpers::compatibleBCs1(col, diffCuts.NDtcoll(), bcs, diffCuts.minNBCs());
+        auto bcRange = udhelpers::compatibleBCs(col, diffCuts.NDtcoll(), bcs, diffCuts.minNBCs());
         isDG = dgSelector.IsSelected(diffCuts, col, bcRange, colTracks, colFwdTracks);
 
         // update UDTables, case 1.
@@ -393,7 +416,7 @@ struct DGBCCandProducer {
           rtrwTOF = udhelpers::rPVtrwTOF<true>(colTracks, col.numContrib());
           nCharge = udhelpers::netCharge<true>(colTracks);
 
-          updateUDTables(false, bc.globalBC(), bc.runNumber(), col.posX(), col.posY(), col.posZ(),
+          updateUDTables(false, col.globalIndex(), bc.globalBC(), bc.runNumber(), col.posX(), col.posY(), col.posZ(),
                          col.numContrib(), nCharge, rtrwTOF, colTracks, fitInfo);
         }
       } else {
@@ -425,7 +448,7 @@ struct DGBCCandProducer {
           rtrwTOF = udhelpers::rPVtrwTOF<false>(tracksArray, tracksArray.size());
           nCharge = udhelpers::netCharge<false>(tracksArray);
 
-          updateUDTables(false, bc.globalBC(), bc.runNumber(), -2., 2., -2,
+          updateUDTables(false, -1, bc.globalBC(), bc.runNumber(), -2., 2., -2,
                          tracksArray.size(), nCharge, rtrwTOF, tracksArray, fitInfo);
         }
       }
@@ -471,7 +494,7 @@ struct DGBCCandProducer {
         rtrwTOF = udhelpers::rPVtrwTOF<false>(tracksArray, tracksArray.size());
         nCharge = udhelpers::netCharge<false>(tracksArray);
 
-        updateUDTables(false, bcnum, tibc.runNumber(), -3., 3., -3,
+        updateUDTables(false, -1, bcnum, tibc.runNumber(), -3., 3., -3,
                        tracksArray.size(), nCharge, rtrwTOF, tracksArray, fitInfo);
       }
     }
@@ -535,6 +558,7 @@ struct DGBCCandProducer {
         bcnum = tibc.bcnum();
       }
     }
+
     bool withCollision = false;
     while (bc2go || tibc2go) {
       LOGF(debug, "Testing bc %d/%d/%d", bcnum, bc.globalBC(), tibc.bcnum());
@@ -588,7 +612,7 @@ struct DGBCCandProducer {
             auto rtrwTOF = udhelpers::rPVtrwTOF<true>(colTracks, col.numContrib());
             auto nCharge = udhelpers::netCharge<true>(colTracks);
             udhelpers::getFITinfo(fitInfo, bcnum, bcs, ft0s, fv0as, fdds);
-            updateUDTables(false, bcnum, bc.runNumber(), col.posX(), col.posY(), col.posZ(),
+            updateUDTables(false, col.globalIndex(), bcnum, bc.runNumber(), col.posX(), col.posY(), col.posZ(),
                            col.numContrib(), nCharge, rtrwTOF, colTracks, fitInfo);
             // fill UDZdcs
             if (bc.has_zdc()) {
@@ -656,7 +680,8 @@ struct DGBCCandProducer {
               vpos[2] = -3.;
             }
 
-            updateUDTables(false, bcnum, tibc.runNumber(), vpos[0], vpos[1], vpos[2],
+            int64_t colID = withCollision ? col.globalIndex() : -1;
+            updateUDTables(false, colID, bcnum, tibc.runNumber(), vpos[0], vpos[1], vpos[2],
                            tracksArray.size(), nCharge, rtrwTOF, tracksArray, fitInfo);
             // fill UDZdcs
             if (bc.globalBC() == bcnum) {

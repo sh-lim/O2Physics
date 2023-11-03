@@ -129,6 +129,7 @@ struct lambdakzeroBuilder {
   Configurable<std::string> lutPath{"lutPath", "GLO/Param/MatLUT", "Path of the Lut parametrization"};
   Configurable<std::string> geoPath{"geoPath", "GLO/Config/GeometryAligned", "Path of the geometry file"};
   Configurable<std::string> mVtxPath{"mVtxPath", "GLO/Calib/MeanVertex", "Path of the mean vertex file"};
+  Configurable<bool> skipGRPOquery{"skipGRPOquery", true, "skip grpo query"};
 
   // generate and fill extra QA histograms is requested
   Configurable<bool> d_doQA{"d_doQA", false, "Do basic QA"};
@@ -250,7 +251,7 @@ struct lambdakzeroBuilder {
       const AxisSpec axisVsPtCoarse{static_cast<int32_t>(dQANBinsPtCoarse), 0, dQAMaxPt, "#it{p}_{T} (GeV/c)"};
       const AxisSpec axisGammaMass{static_cast<int32_t>(dQANBinsMass), 0.000f, 0.400f, "Inv. Mass (GeV/c^{2})"};
       const AxisSpec axisK0ShortMass{static_cast<int32_t>(dQANBinsMass), 0.400f, 0.600f, "Inv. Mass (GeV/c^{2})"};
-      const AxisSpec axisLambdaMass{static_cast<int32_t>(dQANBinsMass), 1.01f, 1.21f, "Inv. Mass (GeV/c^{2})"};
+      const AxisSpec axisLambdaMass{static_cast<int32_t>(5 * dQANBinsMass), 1.01f, 2.01f, "Inv. Mass (GeV/c^{2})"};
       const AxisSpec axisHypertritonMass{static_cast<int32_t>(dQANBinsMass), 2.900f, 3.300f, "Inv. Mass (GeV/c^{2})"};
 
       registry.add("h2dGammaMass", "h2dGammaMass", kTH2F, {axisVsPtCoarse, axisGammaMass});
@@ -446,8 +447,10 @@ struct lambdakzeroBuilder {
     }
 
     auto run3grp_timestamp = bc.timestamp();
-    o2::parameters::GRPObject* grpo = ccdb->getForTimeStamp<o2::parameters::GRPObject>(grpPath, run3grp_timestamp);
+    o2::parameters::GRPObject* grpo = 0x0;
     o2::parameters::GRPMagField* grpmag = 0x0;
+    if (!skipGRPOquery)
+      grpo = ccdb->getForTimeStamp<o2::parameters::GRPObject>(grpPath, run3grp_timestamp);
     if (grpo) {
       o2::base::Propagator::initFieldFromGRP(grpo);
       // Fetch magnetic field from ccdb for current collision
@@ -732,11 +735,14 @@ struct lambdakzeroBuilder {
   }
   PROCESS_SWITCH(lambdakzeroBuilder, processRun2, "Produce Run 2 V0 tables", false);
 
-  void processRun3(aod::Collisions const& collisions, soa::Filtered<TaggedV0s> const& V0s, FullTracksExtIU const&, aod::BCsWithTimestamps const&)
+  void processRun3(aod::Collisions const& collisions, soa::Filtered<TaggedV0s> const& V0s, FullTracksExtIU const&, aod::BCsWithTimestamps const& bcs)
   {
     // Fire up CCDB
-    auto collision = collisions.begin();
-    auto bc = collision.bc_as<aod::BCsWithTimestamps>();
+    auto bc = collisions.size() ? collisions.begin().bc_as<aod::BCsWithTimestamps>() : bcs.begin();
+    if (!bcs.size()) {
+      LOGF(warn, "No BC found, skipping this DF.");
+      return;
+    }
     initCCDB(bc);
     buildStrangenessTables<FullTracksExtIU>(V0s);
   }

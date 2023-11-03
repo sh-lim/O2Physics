@@ -106,65 +106,8 @@ T compatibleBCs(uint64_t meanBC, int deltaBC, T const& bcs);
 template <typename I, typename T>
 T compatibleBCs(I& bcIter, uint64_t meanBC, int deltaBC, T const& bcs);
 
-// In this variant of compatibleBCs the range of compatible BCs is calculated from the
-// collision time and the time resolution dt. Typically the range is +- 4*dt.
-template <typename T>
-T compatibleBCs(soa::Join<aod::Collisions, aod::EvSels>::iterator const& collision, int ndt, T const& bcs, int nMinBCs = 7)
-{
-  LOGF(debug, "Collision time / resolution [ns]: %f / %f", collision.collisionTime(), collision.collisionTimeRes());
-
-  // return if collisions has no associated BC
-  if (!collision.has_foundBC()) {
-    return T{{bcs.asArrowTable()->Slice(0, 0)}, (uint64_t)0};
-  }
-
-  // get associated BC
-  auto bcIter = collision.foundBC_as<T>();
-
-  // due to the filling scheme the most probable BC may not be the one estimated from the collision time
-  uint64_t mostProbableBC = bcIter.globalBC();
-  uint64_t meanBC = mostProbableBC + std::lround(collision.collisionTime() / o2::constants::lhc::LHCBunchSpacingNS);
-
-  // enforce minimum number for deltaBC
-  int deltaBC = std::ceil(collision.collisionTimeRes() / o2::constants::lhc::LHCBunchSpacingNS * ndt);
-  if (deltaBC < nMinBCs) {
-    deltaBC = nMinBCs;
-  }
-  LOGF(debug, "BC %d,  deltaBC %d", bcIter.globalIndex(), deltaBC);
-
-  return compatibleBCs(bcIter, meanBC, deltaBC, bcs);
-}
-
-// same as above but with an other collision iterator as input
-template <typename T>
-T compatibleBCs1(soa::Filtered<soa::Join<aod::Collisions, aod::EvSels>>::iterator const& collision, int ndt, T const& bcs, int nMinBCs = 7)
-{
-  LOGF(debug, "Collision time / resolution [ns]: %f / %f", collision.collisionTime(), collision.collisionTimeRes());
-
-  // return if collisions has no associated BC
-  if (!collision.has_foundBC()) {
-    return T{{bcs.asArrowTable()->Slice(0, 0)}, (uint64_t)0};
-  }
-
-  // get associated BC
-  auto bcIter = collision.foundBC_as<T>();
-
-  // due to the filling scheme the most probable BC may not be the one estimated from the collision time
-  uint64_t mostProbableBC = bcIter.globalBC();
-  uint64_t meanBC = mostProbableBC + std::lround(collision.collisionTime() / o2::constants::lhc::LHCBunchSpacingNS);
-
-  // enforce minimum number for deltaBC
-  int deltaBC = std::ceil(collision.collisionTimeRes() / o2::constants::lhc::LHCBunchSpacingNS * ndt);
-  if (deltaBC < nMinBCs) {
-    deltaBC = nMinBCs;
-  }
-  LOGF(debug, "BC %d,  deltaBC %d", bcIter.globalIndex(), deltaBC);
-
-  return compatibleBCs(bcIter, meanBC, deltaBC, bcs);
-}
-
 // In this variant of compatibleBCs the bcIter is ideally placed within
-// [minBC, maxBC], but it does not need to be. The range is given by +- delatBC.
+// [minBC, maxBC], but it does not need to be. The range is given by meanBC +- delatBC.
 template <typename I, typename T>
 T compatibleBCs(I& bcIter, uint64_t meanBC, int deltaBC, T const& bcs)
 {
@@ -224,6 +167,35 @@ T compatibleBCs(I& bcIter, uint64_t meanBC, int deltaBC, T const& bcs)
   bcs.copyIndexBindings(slice);
   LOGF(debug, "  size of slice %d", slice.size());
   return slice;
+}
+
+// In this variant of compatibleBCs the range of compatible BCs is calculated from the
+// collision time and the time resolution dt. Typically the range is +- 4*dt.
+template <typename C, typename T>
+T compatibleBCs(C const& collision, int ndt, T const& bcs, int nMinBCs = 7)
+{
+  LOGF(debug, "Collision time / resolution [ns]: %f / %f", collision.collisionTime(), collision.collisionTimeRes());
+
+  // return if collisions has no associated BC
+  if (!collision.has_foundBC() || ndt < 0) {
+    return T{{bcs.asArrowTable()->Slice(0, 0)}, (uint64_t)0};
+  }
+
+  // get associated BC
+  auto bcIter = collision.template foundBC_as<T>();
+
+  // due to the filling scheme the most probable BC may not be the one estimated from the collision time
+  uint64_t mostProbableBC = bcIter.globalBC();
+  uint64_t meanBC = mostProbableBC + std::lround(collision.collisionTime() / o2::constants::lhc::LHCBunchSpacingNS);
+
+  // enforce minimum number for deltaBC
+  int deltaBC = std::ceil(collision.collisionTimeRes() / o2::constants::lhc::LHCBunchSpacingNS * ndt);
+  if (deltaBC < nMinBCs) {
+    deltaBC = nMinBCs;
+  }
+  LOGF(debug, "BC %d,  deltaBC %d", bcIter.globalIndex(), deltaBC);
+
+  return compatibleBCs(bcIter, meanBC, deltaBC, bcs);
 }
 
 // In this variant of compatibleBCs the range of compatible BCs is defined by meanBC +- deltaBC.
@@ -625,11 +597,36 @@ bool isPythiaCDE(T MCparts)
 }
 
 // -----------------------------------------------------------------------------
+// In J/Psi -> mu+ + mu- events generated with STARlight the stack starts with
+// 443013, 13, -13 or 443013, -13, 13
+template <typename T>
+bool isSTARLightJPsimumu(T MCparts)
+{
+  if (MCparts.size() < 3) {
+    return false;
+  } else {
+    if (MCparts.iteratorAt(0).pdgCode() != 443013)
+      return false;
+    if (abs(MCparts.iteratorAt(1).pdgCode()) != 13)
+      return false;
+    if (MCparts.iteratorAt(2).pdgCode() != -MCparts.iteratorAt(1).pdgCode())
+      return false;
+  }
+  return true;
+}
+
+// -----------------------------------------------------------------------------
 // In pp events produced with GRANIITTI the stack starts with
 // 22212/22212/99/22212/2212/99/90
 template <typename T>
 bool isGraniittiCDE(T MCparts)
 {
+
+  for (auto MCpart : MCparts) {
+    LOGF(debug, " MCpart.pdgCode() %d", MCpart.pdgCode());
+  }
+  LOGF(debug, "");
+
   if (MCparts.size() < 7) {
     return false;
   } else {
@@ -653,6 +650,30 @@ bool isGraniittiCDE(T MCparts)
 }
 
 // -----------------------------------------------------------------------------
+// function to select MC events of interest
+template <typename T>
+int isOfInterest(T MCparts)
+{
+
+  // PYTHIA CDE
+  if (isPythiaCDE(MCparts)) {
+    return 1;
+  }
+
+  // GRANIITTI CDE
+  if (isGraniittiCDE(MCparts)) {
+    return 2;
+  }
+
+  // STARLIGHT J/Psi -> mu+ + mu-
+  if (isSTARLightJPsimumu(MCparts)) {
+    return 3;
+  }
+
+  return 0;
+}
+
+// -----------------------------------------------------------------------------
 // Invariant mass of GRANIITTI generated event
 template <typename T>
 TLorentzVector ivmGraniittiCDE(T MCparts)
@@ -665,11 +686,13 @@ TLorentzVector ivmGraniittiCDE(T MCparts)
 
     for (int ii = 7; ii < MCparts.size(); ii++) {
       auto mcPart = MCparts.iteratorAt(ii);
+      LOGF(debug, "  part %d / %d", mcPart.pdgCode(), mcPart.getGenStatusCode());
       if (mcPart.getGenStatusCode() == 0) {
         lvtmp.SetXYZT(mcPart.px(), mcPart.py(), mcPart.pz(), mcPart.e());
         ivm += lvtmp;
       }
     }
+    LOGF(debug, "");
   }
 
   return ivm;

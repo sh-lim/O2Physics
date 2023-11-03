@@ -124,6 +124,8 @@ struct cascadeBuilder {
   Configurable<float> lambdaMassWindow{"lambdaMassWindow", .01, "Distance from Lambda mass"};
   Configurable<float> dcaXYCascToPV{"dcaXYCascToPV", 1e+6, "dcaXYCascToPV"};
   Configurable<float> dcaZCascToPV{"dcaZCascToPV", 1e+6, "dcaZCascToPV"};
+  Configurable<bool> d_doPtDep_CosPaCut{"d_doPtDep_CosPaCut", false, "Enable pt dependent cos PA cut"};
+  Configurable<float> cas_cospaParameter{"cas_cospaParameter", 0.341715, "Parameter for pt dependent cos PA cut"};
 
   // Operation and minimisation criteria
   Configurable<double> d_bz_input{"d_bz", -999, "bz field, -999 is automatic"};
@@ -145,6 +147,7 @@ struct cascadeBuilder {
   Configurable<std::string> grpmagPath{"grpmagPath", "GLO/Config/GRPMagField", "CCDB path of the GRPMagField object"};
   Configurable<std::string> lutPath{"lutPath", "GLO/Param/MatLUT", "Path of the Lut parametrization"};
   Configurable<std::string> geoPath{"geoPath", "GLO/Config/GeometryAligned", "Path of the geometry file"};
+  Configurable<bool> skipGRPOquery{"skipGRPOquery", true, "skip grpo query"};
 
   // generate and fill extra QA histograms if requested
   Configurable<bool> d_doQA{"d_doQA", false, "Do basic QA"};
@@ -237,7 +240,7 @@ struct cascadeBuilder {
 
   o2::track::TrackParCov lBachelorTrack;
   o2::track::TrackParCov lV0Track;
-  o2::track::TrackPar lCascadeTrack;
+  o2::track::TrackParCov lCascadeTrack;
 
   // Helper struct to do bookkeeping of building parameters
   struct {
@@ -295,14 +298,20 @@ struct cascadeBuilder {
     if (d_doQA) {
       // Basic histograms containing invariant masses of all built candidates
       const AxisSpec axisVsPtCoarse{(int)dQANBinsPtCoarse, 0, dQAMaxPt, "#it{p}_{T} (GeV/c)"};
+      const AxisSpec axisLamMass{(int)dQANBinsMass, 1.075f, 1.275f, "Inv. Mass (GeV/c^{2})"};
       const AxisSpec axisXiMass{(int)dQANBinsMass, 1.222f, 1.422f, "Inv. Mass (GeV/c^{2})"};
       const AxisSpec axisOmegaMass{(int)dQANBinsMass, 1.572f, 1.772f, "Inv. Mass (GeV/c^{2})"};
       const AxisSpec axisCascadeDCAtoPV{(int)dQANBinsDCAxy, -dQAMaxDCA, dQAMaxDCA, "DCA_{xy} (cm)"};
 
-      registry.add("h2dXiMinusMass", "h2dXiMinusMass", kTH2F, {axisVsPtCoarse, axisXiMass});
-      registry.add("h2dXiPlusMass", "h2dXiPlusMass", kTH2F, {axisVsPtCoarse, axisXiMass});
-      registry.add("h2dOmegaMinusMass", "h2dOmegaMinusMass", kTH2F, {axisVsPtCoarse, axisOmegaMass});
-      registry.add("h2dOmegaPlusMass", "h2dOmegaPlusMass", kTH2F, {axisVsPtCoarse, axisOmegaMass});
+      registry.add("h2dLambdaMass", "h2dLambdaMass", kTH2F, {axisPtQA, axisLamMass});
+      registry.add("h2dAntiLambdaMass", "h2dAntiLambdaMass", kTH2F, {axisPtQA, axisLamMass});
+      registry.add("MassHistograms/h2dXiMinusMass", "h2dXiMinusMass", kTH2F, {axisPtQA, axisXiMass});
+      registry.add("MassHistograms/h2dXiPlusMass", "h2dXiPlusMass", kTH2F, {axisPtQA, axisXiMass});
+      registry.add("MassHistograms/h2dOmegaMinusMass", "h2dOmegaMinusMass", kTH2F, {axisPtQA, axisOmegaMass});
+      registry.add("MassHistograms/h2dOmegaPlusMass", "h2dOmegaPlusMass", kTH2F, {axisPtQA, axisOmegaMass});
+
+      if (d_doPtDep_CosPaCut)
+        registry.addClone("MassHistograms/", "MassHistograms_BefPAcut/");
 
       // bit packed ITS cluster map
       const AxisSpec axisITSCluMap{(int)128, -0.5f, +127.5f, "Packed ITS map"};
@@ -418,7 +427,7 @@ struct cascadeBuilder {
       lut = o2::base::MatLayerCylSet::rectifyPtrFromFile(ccdb->get<o2::base::MatLayerCylSet>(lutPath));
     }
 
-    if (doprocessRun2 == false && doprocessRun3 == false && doprocessRun3withStrangenessTracking == false) {
+    if (doprocessRun2 == false && doprocessRun3 == false && doprocessRun3withStrangenessTracking == false && doprocessRun3withKFParticle == false) {
       LOGF(fatal, "Neither processRun2 nor processRun3 nor processRun3withstrangenesstracking enabled. Please choose one!");
     }
     if (doprocessRun2 == true && doprocessRun3 == true) {
@@ -587,8 +596,10 @@ struct cascadeBuilder {
     }
 
     auto run3grp_timestamp = bc.timestamp();
-    o2::parameters::GRPObject* grpo = ccdb->getForTimeStamp<o2::parameters::GRPObject>(grpPath, run3grp_timestamp);
+    o2::parameters::GRPObject* grpo = 0x0;
     o2::parameters::GRPMagField* grpmag = 0x0;
+    if (!skipGRPOquery)
+      grpo = ccdb->getForTimeStamp<o2::parameters::GRPObject>(grpPath, run3grp_timestamp);
     if (grpo) {
       o2::base::Propagator::initFieldFromGRP(grpo);
       // Fetch magnetic field from ccdb for current collision
@@ -765,6 +776,14 @@ struct cascadeBuilder {
     // Overall cascade charge
     cascadecandidate.charge = bachTrack.signed1Pt() > 0 ? +1 : -1;
 
+    if (d_doQA) {
+      // produce a plot that showcases the mass of the received lambdas
+      if (cascadecandidate.charge < 0)
+        registry.fill(HIST("h2dLambdaMass"), v0.pt(), v0.mLambda());
+      if (cascadecandidate.charge > 0)
+        registry.fill(HIST("h2dAntiLambdaMass"), v0.pt(), v0.mAntiLambda());
+    }
+
     // check also against charge
     if (cascadecandidate.charge < 0 && TMath::Abs(v0.mLambda() - 1.116) > lambdaMassWindow)
       return false;
@@ -837,11 +856,38 @@ struct cascadeBuilder {
       cascadecandidate.pos[i] = vtx[i];
     }
 
+    if (d_doQA && d_doPtDep_CosPaCut) {
+      bool mcUnchecked = !d_QA_checkMC;
+      bool dEdxUnchecked = !d_QA_checkdEdx;
+
+      // Calculate masses
+      auto lPt = RecoDecay::sqrtSumOfSquares(v0.pxpos() + v0.pxneg() + cascadecandidate.bachP[0], v0.pypos() + v0.pyneg() + cascadecandidate.bachP[1]);
+
+      // Fill basic mass histograms
+      // Note: all presel bools are true if unchecked
+      if ((cascade.isdEdxXiMinus() || dEdxUnchecked) && (cascade.isTrueXiMinus() || mcUnchecked) && cascadecandidate.charge < 0)
+        registry.fill(HIST("MassHistograms_BefPAcut/h2dXiMinusMass"), lPt, RecoDecay::m(array{array{cascadecandidate.bachP[0], cascadecandidate.bachP[1], cascadecandidate.bachP[2]}, array{v0.pxpos() + v0.pxneg(), v0.pypos() + v0.pyneg(), v0.pzpos() + v0.pzneg()}}, array{o2::constants::physics::MassPionCharged, o2::constants::physics::MassLambda}));
+      if ((cascade.isdEdxXiPlus() || dEdxUnchecked) && (cascade.isTrueXiPlus() || mcUnchecked) && cascadecandidate.charge > 0)
+        registry.fill(HIST("MassHistograms_BefPAcut/h2dXiPlusMass"), lPt, RecoDecay::m(array{array{cascadecandidate.bachP[0], cascadecandidate.bachP[1], cascadecandidate.bachP[2]}, array{v0.pxpos() + v0.pxneg(), v0.pypos() + v0.pyneg(), v0.pzpos() + v0.pzneg()}}, array{o2::constants::physics::MassPionCharged, o2::constants::physics::MassLambda}));
+      if ((cascade.isdEdxOmegaMinus() || dEdxUnchecked) && (cascade.isTrueOmegaMinus() || mcUnchecked) && cascadecandidate.charge < 0)
+        registry.fill(HIST("MassHistograms_BefPAcut/h2dOmegaMinusMass"), lPt, RecoDecay::m(array{array{cascadecandidate.bachP[0], cascadecandidate.bachP[1], cascadecandidate.bachP[2]}, array{v0.pxpos() + v0.pxneg(), v0.pypos() + v0.pyneg(), v0.pzpos() + v0.pzneg()}}, array{o2::constants::physics::MassKaonCharged, o2::constants::physics::MassLambda}));
+      if ((cascade.isdEdxOmegaPlus() || dEdxUnchecked) && (cascade.isTrueOmegaPlus() || mcUnchecked) && cascadecandidate.charge > 0)
+        registry.fill(HIST("MassHistograms_BefPAcut/h2dOmegaPlusMass"), lPt, RecoDecay::m(array{array{cascadecandidate.bachP[0], cascadecandidate.bachP[1], cascadecandidate.bachP[2]}, array{v0.pxpos() + v0.pxneg(), v0.pypos() + v0.pyneg(), v0.pzpos() + v0.pzneg()}}, array{o2::constants::physics::MassKaonCharged, o2::constants::physics::MassLambda}));
+    }
+
     cascadecandidate.cosPA = RecoDecay::cpa(
       array{collision.posX(), collision.posY(), collision.posZ()},
       array{cascadecandidate.pos[0], cascadecandidate.pos[1], cascadecandidate.pos[2]},
       array{v0.pxpos() + v0.pxneg() + cascadecandidate.bachP[0], v0.pypos() + v0.pyneg() + cascadecandidate.bachP[1], v0.pzpos() + v0.pzneg() + cascadecandidate.bachP[2]});
-    if (cascadecandidate.cosPA < casccospa) {
+    if (d_doPtDep_CosPaCut) {
+      auto lPt = RecoDecay::sqrtSumOfSquares(v0.pxpos() + v0.pxneg() + cascadecandidate.bachP[0], v0.pypos() + v0.pyneg() + cascadecandidate.bachP[1]);
+      double ptdepCut = cas_cospaParameter / lPt;
+      if (ptdepCut > 0.3 || lPt < 0.5)
+        ptdepCut = 0.3;
+      if (cascadecandidate.cosPA < TMath::Cos(ptdepCut)) {
+        return false;
+      }
+    } else if (cascadecandidate.cosPA < casccospa) {
       return false;
     }
     statisticsRegistry.cascstats[kCascCosPA]++;
@@ -853,7 +899,7 @@ struct cascadeBuilder {
     statisticsRegistry.cascstats[kCascRadius]++;
 
     // Calculate DCAxy of the cascade (with bending)
-    lCascadeTrack = fitter.createParentTrackPar();
+    lCascadeTrack = fitter.createParentTrackParCov();
     lCascadeTrack.setAbsCharge(cascadecandidate.charge); // to be sure
     lCascadeTrack.setPID(o2::track::PID::XiMinus);       // FIXME: not OK for omegas
     dcaInfo[0] = 999;
@@ -904,13 +950,13 @@ struct cascadeBuilder {
       // Fill basic mass histograms
       // Note: all presel bools are true if unchecked
       if ((cascade.isdEdxXiMinus() || dEdxUnchecked) && (cascade.isTrueXiMinus() || mcUnchecked) && cascadecandidate.charge < 0)
-        registry.fill(HIST("h2dXiMinusMass"), lPt, cascadecandidate.mXi);
+        registry.fill(HIST("MassHistograms/h2dXiMinusMass"), lPt, cascadecandidate.mXi);
       if ((cascade.isdEdxXiPlus() || dEdxUnchecked) && (cascade.isTrueXiPlus() || mcUnchecked) && cascadecandidate.charge > 0)
-        registry.fill(HIST("h2dXiPlusMass"), lPt, cascadecandidate.mXi);
+        registry.fill(HIST("MassHistograms/h2dXiPlusMass"), lPt, cascadecandidate.mXi);
       if ((cascade.isdEdxOmegaMinus() || dEdxUnchecked) && (cascade.isTrueOmegaMinus() || mcUnchecked) && cascadecandidate.charge < 0)
-        registry.fill(HIST("h2dOmegaMinusMass"), lPt, cascadecandidate.mOmega);
+        registry.fill(HIST("MassHistograms/h2dOmegaMinusMass"), lPt, cascadecandidate.mOmega);
       if ((cascade.isdEdxOmegaPlus() || dEdxUnchecked) && (cascade.isTrueOmegaPlus() || mcUnchecked) && cascadecandidate.charge > 0)
-        registry.fill(HIST("h2dOmegaPlusMass"), lPt, cascadecandidate.mOmega);
+        registry.fill(HIST("MassHistograms/h2dOmegaPlusMass"), lPt, cascadecandidate.mOmega);
 
       // Fill ITS cluster maps with specific mass cuts
       if (TMath::Abs(cascadecandidate.mXi - 1.322) < dQAXiMassWindow && ((cascade.isdEdxXiMinus() || dEdxUnchecked) && (cascade.isTrueXiMinus() || mcUnchecked)) && cascadecandidate.charge < 0) {
@@ -1274,7 +1320,7 @@ struct cascadeBuilder {
       if (createCascCovMats) {
         gpu::gpustd::array<float, 15> covmatrix;
         float trackCovariance[15];
-        covmatrix = lBachelorTrack.getCov();
+        covmatrix = lCascadeTrack.getCov();
         for (int i = 0; i < 15; i++)
           trackCovariance[i] = covmatrix[i];
         kfcasccovs(trackCovariance);
@@ -1538,6 +1584,9 @@ struct cascadeBuilder {
 struct cascadePreselector {
   Produces<aod::CascTags> casctags; // MC tags
 
+  // for bookkeeping
+  HistogramRegistry histos{"Histos", {}, OutputObjHandlingPolicy::AnalysisObject};
+
   Configurable<bool> dIfMCgenerateXiMinus{"dIfMCgenerateXiMinus", true, "if MC, generate MC true XiMinus (yes/no)"};
   Configurable<bool> dIfMCgenerateXiPlus{"dIfMCgenerateXiPlus", true, "if MC, generate MC true XiPlus (yes/no)"};
   Configurable<bool> dIfMCgenerateOmegaMinus{"dIfMCgenerateOmegaMinus", true, "if MC, generate MC true OmegaMinus (yes/no)"};
@@ -1573,7 +1622,10 @@ struct cascadePreselector {
                bitdEdxOmegaPlus,
                bitUsedInTrackedCascade };
 
-  void init(InitContext const&) {}
+  void init(InitContext const&)
+  {
+    histos.add("hPreselectorStatistics", "hPreselectorStatistics", kTH1F, {{5, -0.5f, 4.5f}});
+  }
 
   //*+-+*+-+*+-+*+-+*+-+*+-+*+-+*+-+*+-+*+-+*
   /// function to check track quality
@@ -1716,19 +1768,24 @@ struct cascadePreselector {
   {
     // parse + publish tag table now
     for (int ii = 0; ii < selectionMask.size(); ii++) {
+      histos.fill(HIST("hPreselectorStatistics"), 0.0f); // All cascades
       bool validCascade = bitcheck(selectionMask[ii], bitTrackQuality);
+      histos.fill(HIST("hPreselectorStatistics"), 1.0f); // pass MC assoc (if requested)
       if (doprocessBuildMCAssociated || doprocessBuildValiddEdxMCAssociated)
         validCascade = validCascade && ((bitcheck(selectionMask[ii], bitTrueXiMinus) && dIfMCgenerateXiMinus) ||
                                         (bitcheck(selectionMask[ii], bitTrueXiPlus) && dIfMCgenerateXiPlus) ||
                                         (bitcheck(selectionMask[ii], bitTrueOmegaMinus) && dIfMCgenerateOmegaMinus) ||
                                         (bitcheck(selectionMask[ii], bitTrueOmegaPlus) && dIfMCgenerateOmegaPlus));
+      histos.fill(HIST("hPreselectorStatistics"), 2.0f); // pass MC assoc (if requested)
       if (doprocessBuildValiddEdx || doprocessBuildValiddEdxMCAssociated)
         validCascade = validCascade && ((bitcheck(selectionMask[ii], bitdEdxXiMinus) && ddEdxPreSelectXiMinus) ||
                                         (bitcheck(selectionMask[ii], bitdEdxXiPlus) && ddEdxPreSelectXiPlus) ||
                                         (bitcheck(selectionMask[ii], bitdEdxOmegaMinus) && ddEdxPreSelectOmegaMinus) ||
                                         (bitcheck(selectionMask[ii], bitdEdxOmegaPlus) && ddEdxPreSelectOmegaPlus));
+      histos.fill(HIST("hPreselectorStatistics"), 3.0f); // pass dEdx (if requested)
       if (doprocessSkipCascadesNotUsedInTrackedCascades)
         validCascade = validCascade && bitcheck(selectionMask[ii], bitUsedInTrackedCascade);
+      histos.fill(HIST("hPreselectorStatistics"), 4.0f); // All cascades
       casctags(validCascade,
                bitcheck(selectionMask[ii], bitTrueXiMinus), bitcheck(selectionMask[ii], bitTrueXiPlus),
                bitcheck(selectionMask[ii], bitTrueOmegaMinus), bitcheck(selectionMask[ii], bitTrueOmegaPlus),
