@@ -14,6 +14,9 @@
 ///
 /// \author Alexandre Bigot <alexandre.bigot@cern.ch>, IPHC Strasbourg
 
+#include <vector>
+
+#include "CommonConstants/PhysicsConstants.h"
 #include "Framework/AnalysisTask.h"
 #include "Framework/HistogramRegistry.h"
 #include "Framework/O2DatabasePDGPlugin.h"
@@ -156,9 +159,6 @@ struct HfTaskB0 {
                TracksWithSel const&)
   {
     for (const auto& candidate : candidates) {
-      if (!TESTBIT(candidate.hfflag(), hf_cand_b0::DecayType::B0ToDPi)) {
-        continue;
-      }
       if (yCandRecoMax >= 0. && std::abs(hfHelper.yB0(candidate)) > yCandRecoMax) {
         continue;
       }
@@ -196,9 +196,6 @@ struct HfTaskB0 {
   {
     // MC rec
     for (const auto& candidate : candidates) {
-      if (!TESTBIT(candidate.hfflag(), hf_cand_b0::DecayType::B0ToDPi)) {
-        continue;
-      }
       if (yCandRecoMax >= 0. && std::abs(hfHelper.yB0(candidate)) > yCandRecoMax) {
         continue;
       }
@@ -209,7 +206,7 @@ struct HfTaskB0 {
       int flagMcMatchRecB0 = std::abs(candidate.flagMcMatchRec());
 
       if (TESTBIT(flagMcMatchRecB0, hf_cand_b0::DecayTypeMc::B0ToDplusPiToPiKPiPi)) {
-        auto indexMother = RecoDecay::getMother(mcParticles, candidate.prong1_as<aod::TracksWMc>().mcParticle_as<soa::Join<aod::McParticles, aod::HfCandB0McGen>>(), pdg::Code::kB0, true);
+        auto indexMother = RecoDecay::getMother(mcParticles, candidate.prong1_as<aod::TracksWMc>().mcParticle_as<soa::Join<aod::McParticles, aod::HfCandB0McGen>>(), o2::constants::physics::Pdg::kB0, true);
         auto particleMother = mcParticles.rawIteratorAt(indexMother);
 
         registry.fill(HIST("hPtGenSig"), particleMother.pt());
@@ -270,7 +267,7 @@ struct HfTaskB0 {
       if (TESTBIT(std::abs(particle.flagMcMatchGen()), hf_cand_b0::DecayType::B0ToDPi)) {
 
         auto ptParticle = particle.pt();
-        auto yParticle = RecoDecay::y(std::array{particle.px(), particle.py(), particle.pz()}, o2::analysis::pdg::MassB0);
+        auto yParticle = RecoDecay::y(particle.pVector(), o2::constants::physics::MassB0);
         if (yCandGenMax >= 0. && std::abs(yParticle) > yCandGenMax) {
           continue;
         }
@@ -282,7 +279,7 @@ struct HfTaskB0 {
         for (const auto& daught : particle.daughters_as<aod::McParticles>()) {
           ptProngs[counter] = daught.pt();
           etaProngs[counter] = daught.eta();
-          yProngs[counter] = RecoDecay::y(std::array{daught.px(), daught.py(), daught.pz()}, pdg->Mass(daught.pdgCode()));
+          yProngs[counter] = RecoDecay::y(daught.pVector(), pdg->Mass(daught.pdgCode()));
           counter++;
         }
 

@@ -16,8 +16,8 @@
 #include "Framework/runDataProcessing.h"
 
 /// FemtoDream includes
-#include "PWGCF/FemtoDream/FemtoDreamMath.h"
-#include "PWGCF/FemtoDream/FemtoUtils.h"
+#include "PWGCF/FemtoDream/Core/femtoDreamMath.h"
+#include "PWGCF/FemtoDream/Core/femtoDreamUtils.h"
 #include "PWGCF/DataModel/FemtoDerived.h"
 
 using namespace o2;
@@ -37,7 +37,7 @@ struct CFTutorialTask1 {
 
   // TODO :
   // Defining filters for analysis level selections on events and tracks
-  // on Femto tables defined FemtoDerived.h
+  // on Femto tables defined in FemtoDerived.h
   // Filter collisionFilter = ...
   // Filter trackFilter = ...
 
@@ -50,7 +50,6 @@ struct CFTutorialTask1 {
   // create analysis objects like histograms
   void init(o2::framework::InitContext&)
   {
-
     // Add histograms to histogram registry
     HistRegistry.add("Event/hZvtx", ";Z (cm)", kTH1F, {{240, -12, 12}});
 

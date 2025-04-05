@@ -15,6 +15,9 @@
 ///
 /// \author Alessandro De Falco <alessandro.de.falco@ca.infn.it>, Università/INFN Cagliari
 
+#include <vector>
+
+#include "CommonConstants/PhysicsConstants.h"
 #include "Framework/AnalysisTask.h"
 #include "Framework/runDataProcessing.h"
 
@@ -45,7 +48,7 @@ struct HfCandidateSelectorChicToJpsiGamma {
   Configurable<double> nSigmaTofMax{"nSigmaTofMax", 3., "Nsigma cut on TOF only"};
   // topological cuts
   Configurable<std::vector<double>> binsPt{"binsPt", std::vector<double>{hf_cuts_chic_to_jpsi_gamma::vecBinsPt}, "pT bin limits"};
-  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_chic_to_jpsi_gamma::cuts[0], hf_cuts_chic_to_jpsi_gamma::nBinsPt, hf_cuts_chic_to_jpsi_gamma::nCutVars, hf_cuts_chic_to_jpsi_gamma::labelsPt, hf_cuts_chic_to_jpsi_gamma::labelsCutVar}, "Jpsi candidate selection per pT bin"};
+  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_chic_to_jpsi_gamma::Cuts[0], hf_cuts_chic_to_jpsi_gamma::NBinsPt, hf_cuts_chic_to_jpsi_gamma::NCutVars, hf_cuts_chic_to_jpsi_gamma::labelsPt, hf_cuts_chic_to_jpsi_gamma::labelsCutVar}, "Jpsi candidate selection per pT bin"};
 
   HfHelper hfHelper;
 
@@ -54,7 +57,7 @@ struct HfCandidateSelectorChicToJpsiGamma {
   /// \param track is daughter track
   /// \return true if track is good
   template <typename T>
-  bool daughterSelection(const T& track)
+  bool daughterSelection(const T& /*track*/)
   {
     return true;
   }
@@ -64,7 +67,7 @@ struct HfCandidateSelectorChicToJpsiGamma {
   /// \param trackNeutral is the track with the pi+ hypothesis
   /// \return true if candidate passes all cuts
   template <typename T1, typename T2, typename T3>
-  bool selectionTopol(const T1& hfCandChic, const T2& hfCandJpsi, const T3& ecal)
+  bool selectionTopol(const T1& hfCandChic, const T2& hfCandJpsi, const T3& /*ecal*/)
   {
     auto candpT = hfCandChic.pt();
     int pTBin = findBin(binsPt, candpT);
@@ -76,7 +79,7 @@ struct HfCandidateSelectorChicToJpsiGamma {
       return false; // check that the candidate pT is within the analysis range
     }
 
-    auto mchic = o2::analysis::pdg::MassChiC1; // chi_c1(1p)
+    auto mchic = o2::constants::physics::MassChiC1; // chi_c1(1p)
     if (std::abs(hfHelper.invMassChicToJpsiGamma(hfCandChic) - mchic) > cuts->get(pTBin, "m")) {
       // LOGF(debug, "Chic topol selection failed at mass diff check");
       return false; // check that mass difference is within bounds
@@ -94,8 +97,8 @@ struct HfCandidateSelectorChicToJpsiGamma {
       return false; // CPA check
     }
 
-    if ((std::abs(hfCandChic.impactParameter0()) > cuts->get(pTBin, "d0 Jpsi"))) {   // adf: Warning: no cut on photon
-      return false;                                                                  // DCA check on daughters
+    if ((std::abs(hfCandChic.impactParameter0()) > cuts->get(pTBin, "d0 Jpsi"))) { // adf: Warning: no cut on photon
+      return false;                                                                // DCA check on daughters
     }
 
     // add more cuts: d0 product? PCA?
@@ -136,7 +139,7 @@ struct HfCandidateSelectorChicToJpsiGamma {
   /// \param nSigmaCut is the nsigma threshold to test against
   /// \return true if track satisfies TPC pion hypothesis for given Nsigma cut
   template <typename T>
-  bool selectionPIDTPC(const T& track, int nSigmaCut)
+  bool selectionPIDTPC(const T& /*track*/, int nSigmaCut)
   {
     if (nSigmaCut > 999.) {
       return true;
@@ -150,7 +153,7 @@ struct HfCandidateSelectorChicToJpsiGamma {
   // \param nSigmaCut is the nSigma threshold to test against
   // \return true if track satisfies TOF pion hypothesis for given NSigma cut
   template <typename T>
-  bool selectionPIDTOF(const T& track, double nSigmaCut)
+  bool selectionPIDTOF(const T& /*track*/, double nSigmaCut)
   {
     if (nSigmaCut > 999.) {
       return true;
@@ -163,7 +166,7 @@ struct HfCandidateSelectorChicToJpsiGamma {
   // \param track is the daughter track
   // \return 1 if successful PID match, 0 if successful PID rejection, -1 if no PID info
   template <typename T>
-  int selectionPID(const T& track)
+  int selectionPID(const T& /*track*/)
   { // use both TPC and TOF here; in run5 only TOF makes sense. add some flag for run3/run5 data later?
     // if (validTofPid(track)) {
     //   if (!selectionPIDTOF(track, nSigmaTofMax)) {
@@ -181,7 +184,7 @@ struct HfCandidateSelectorChicToJpsiGamma {
 
   void process(aod::HfCandChic const& hfCandChics,
                aod::HfCand2Prong const&,
-               aod::ECALs const& ecals)
+               aod::ECALs const&)
   {
     for (const auto& hfCandChic : hfCandChics) { // looping over chi_c candidates
       // note the difference between Jpsi (index0) and pions (index1,2)

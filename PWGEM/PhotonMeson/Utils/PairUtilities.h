@@ -18,7 +18,18 @@
 #include <TVector2.h>
 #include <cmath>
 
-namespace o2::aod::photonpair
+namespace o2::aod::pwgem::photonmeson::utils::pairutil
+{
+enum class PhotonPrefilterBitDerived : int {
+  kPhotonFromPi0gg = 0,  // photon from pi0->gg
+  kPhotonFromPi0eeg = 1, // photon from pi0->eeg
+};
+enum class ElectronPrefilterBitDerived : int {
+  kElectronFromPi0eeg = 0, // electron from pi0->eeg
+  kElectronFromFakePC = 1, // electron from photon->ee, misidentified photon conversion as virtual photon
+};
+} // namespace o2::aod::pwgem::photonmeson::utils::pairutil
+namespace o2::aod::pwgem::photonmeson::photonpair
 {
 enum PairType {
   kPCMPCM = 0,
@@ -26,9 +37,11 @@ enum PairType {
   kEMCEMC = 2,
   kPCMPHOS = 3,
   kPCMEMC = 4,
-  kPCMDalitz = 5,
-  kPHOSEMC = 6,
-  kPCMPCMibw = 7,
+  kPCMDalitzEE = 5,
+  kPCMDalitzMuMu = 6,
+  kPHOSEMC = 7,
+  kEEEE = 8, // dielectron-dielectron
+  kNpair,
 };
 
 template <typename U1, typename U2, typename TG1, typename TG2, typename TCut1, typename TCut2>
@@ -50,6 +63,6 @@ bool DoesV0LegMatchWithCluster(TV0Leg const& v0leg, TCluster const& cluster, con
   float Ep = cluster.e() / v0leg.p();
   return (pow(deta / max_deta, 2) + pow(dphi / max_dphi, 2) < 1) && (abs(Ep - 1) < max_Ep_width);
 }
-} // namespace o2::aod::photonpair
+} // namespace o2::aod::pwgem::photonmeson::photonpair
 
 #endif // PWGEM_PHOTONMESON_UTILS_PAIRUTILITIES_H_

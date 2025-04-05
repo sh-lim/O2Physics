@@ -16,6 +16,9 @@
 /// \author Nima Zardoshti <nima.zardoshti@cern.ch>, CERN
 /// \author Vít Kučera <vit.kucera@cern.ch>, CERN
 
+#include <vector>
+
+#include "CommonConstants/PhysicsConstants.h"
 #include "Framework/AnalysisTask.h"
 
 #include "ALICE3/DataModel/MID.h"
@@ -81,7 +84,7 @@ struct HfCandidateSelectorJpsi {
   Configurable<double> nSigmaRichCombinedTofMax{"nSigmaRichCombinedTofMax", 5., "Nsigma cut on RICH combined with TOF"};
   // topological cuts
   Configurable<std::vector<double>> binsPt{"binsPt", std::vector<double>{hf_cuts_jpsi_to_e_e::vecBinsPt}, "pT bin limits"};
-  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_jpsi_to_e_e::cuts[0], hf_cuts_jpsi_to_e_e::nBinsPt, hf_cuts_jpsi_to_e_e::nCutVars, hf_cuts_jpsi_to_e_e::labelsPt, hf_cuts_jpsi_to_e_e::labelsCutVar}, "Jpsi candidate selection per pT bin"};
+  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_jpsi_to_e_e::Cuts[0], hf_cuts_jpsi_to_e_e::NBinsPt, hf_cuts_jpsi_to_e_e::NCutVars, hf_cuts_jpsi_to_e_e::labelsPt, hf_cuts_jpsi_to_e_e::labelsCutVar}, "Jpsi candidate selection per pT bin"};
 
   HfHelper hfHelper;
   TrackSelectorEl selectorElectron;
@@ -90,7 +93,7 @@ struct HfCandidateSelectorJpsi {
   using TracksSelAlice2 = soa::Join<aod::TracksWDca, aod::TracksPidEl>;
   using TracksSelAlice3 = soa::Join<aod::TracksWDca, aod::pidTOFFullEl, aod::pidTOFFullPi, aod::HfTrackIndexALICE3PID>;
 
-  void init(InitContext const& initContext)
+  void init(InitContext const&)
   {
     selectorElectron.setRangePtTpc(ptPidTpcMin, ptPidTpcMax);
     selectorElectron.setRangeNSigmaTpc(-nSigmaTpcMax, nSigmaTpcMax);
@@ -123,12 +126,12 @@ struct HfCandidateSelectorJpsi {
     }
 
     // cut on e+ e− invariant mass
-    if (std::abs(hfHelper.invMassJpsiToEE(candidate) - o2::analysis::pdg::MassJPsi) > cuts->get(pTBin, "m")) {
+    if (std::abs(hfHelper.invMassJpsiToEE(candidate) - o2::constants::physics::MassJPsi) > cuts->get(pTBin, "m")) {
       selEE = 0;
     }
 
     // cut on μ+ μ− invariant mass
-    if (std::abs(hfHelper.invMassJpsiToMuMu(candidate) - o2::analysis::pdg::MassJPsi) > cuts->get(pTBin, "m")) {
+    if (std::abs(hfHelper.invMassJpsiToMuMu(candidate) - o2::constants::physics::MassJPsi) > cuts->get(pTBin, "m")) {
       selMuMu = 0;
     }
 

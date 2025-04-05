@@ -14,6 +14,9 @@
 ///
 /// \author Gian Michele Innocenti <gian.michele.innocenti@cern.ch>, CERN
 
+#include <vector>
+
+#include "CommonConstants/PhysicsConstants.h"
 #include "Framework/AnalysisTask.h"
 #include "Framework/runDataProcessing.h"
 
@@ -46,7 +49,7 @@ struct HfCandidateSelectorXiccToPKPiPi {
   Configurable<double> nSigmaTofCombinedMax{"nSigmaTofCombinedMax", 5., "Nsigma cut on TOF combined with TPC"};
   // topological cuts
   Configurable<std::vector<double>> binsPt{"binsPt", std::vector<double>{hf_cuts_xicc_to_p_k_pi_pi::vecBinsPt}, "pT bin limits"};
-  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_xicc_to_p_k_pi_pi::cuts[0], hf_cuts_xicc_to_p_k_pi_pi::nBinsPt, hf_cuts_xicc_to_p_k_pi_pi::nCutVars, hf_cuts_xicc_to_p_k_pi_pi::labelsPt, hf_cuts_xicc_to_p_k_pi_pi::labelsCutVar}, "Xicc candidate selection per pT bin"};
+  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_xicc_to_p_k_pi_pi::Cuts[0], hf_cuts_xicc_to_p_k_pi_pi::NBinsPt, hf_cuts_xicc_to_p_k_pi_pi::NCutVars, hf_cuts_xicc_to_p_k_pi_pi::labelsPt, hf_cuts_xicc_to_p_k_pi_pi::labelsCutVar}, "Xicc candidate selection per pT bin"};
 
   HfHelper hfHelper;
   TrackSelectorPi selectorPion;
@@ -81,7 +84,7 @@ struct HfCandidateSelectorXiccToPKPiPi {
     }
 
     // check candidate mass is within a defined mass window
-    if (std::abs(hfHelper.invMassXiccToXicPi(hfCandXicc) - o2::analysis::pdg::MassXiCCPlusPlus) > cuts->get(pTBin, "m")) {
+    if (std::abs(hfHelper.invMassXiccToXicPi(hfCandXicc) - o2::constants::physics::MassXiCCPlusPlus) > cuts->get(pTBin, "m")) {
       return false;
     }
 

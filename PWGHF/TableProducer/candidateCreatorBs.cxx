@@ -15,6 +15,11 @@
 ///
 /// \author Phil Stahlhut <phil.lennart.stahlhut@cern.ch>
 
+#include <string>
+#include <memory>
+#include <vector>
+
+#include "CommonConstants/PhysicsConstants.h"
 #include "DCAFitter/DCAFitterN.h"
 #include "Framework/AnalysisTask.h"
 #include "Framework/runDataProcessing.h"
@@ -28,16 +33,20 @@
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/DataModel/CandidateSelectionTables.h"
 #include "PWGHF/Utils/utilsBfieldCCDB.h"
+#include "PWGHF/Utils/utilsTrkCandHf.h"
 
 using namespace o2;
 using namespace o2::analysis;
 using namespace o2::aod;
+using namespace o2::constants::physics;
 using namespace o2::framework;
 using namespace o2::framework::expressions;
+using namespace o2::hf_trkcandsel;
 
 /// Reconstruction of Bs candidates
 struct HfCandidateCreatorBs {
-  Produces<aod::HfCandBsBase> rowCandidateBase; // table defined in CandidateReconstructionTables.h
+  Produces<aod::HfCandBsBase> rowCandidateBase;     // table defined in CandidateReconstructionTables.h
+  Produces<aod::HfCandBsProngs> rowCandidateProngs; // table defined in CandidateReconstructionTables.h
 
   // vertexing
   Configurable<bool> propagateToPCA{"propagateToPCA", true, "create tracks version propagated to PCA"};
@@ -52,7 +61,7 @@ struct HfCandidateCreatorBs {
   Configurable<bool> usePionIsGlobalTrackWoDCA{"usePionIsGlobalTrackWoDCA", true, "check isGlobalTrackWoDCA status for pions, for Run3 studies"};
   Configurable<double> ptPionMin{"ptPionMin", 0.5, "minimum pion pT threshold (GeV/c)"};
   Configurable<std::vector<double>> binsPtPion{"binsPtPion", std::vector<double>{hf_cuts_single_track::vecBinsPtTrack}, "track pT bin limits for pion DCA XY pT-dependent cut"};
-  Configurable<LabeledArray<double>> cutsTrackPionDCA{"cutsTrackPionDCA", {hf_cuts_single_track::cutsTrack[0], hf_cuts_single_track::nBinsPtTrack, hf_cuts_single_track::nCutVarsTrack, hf_cuts_single_track::labelsPtTrack, hf_cuts_single_track::labelsCutVarTrack}, "Single-track selections per pT bin for pions"};
+  Configurable<LabeledArray<double>> cutsTrackPionDCA{"cutsTrackPionDCA", {hf_cuts_single_track::CutsTrack[0], hf_cuts_single_track::NBinsPtTrack, hf_cuts_single_track::NCutVarsTrack, hf_cuts_single_track::labelsPtTrack, hf_cuts_single_track::labelsCutVarTrack}, "Single-track selections per pT bin for pions"};
   Configurable<double> invMassWindowBs{"invMassWindowBs", 0.3, "invariant-mass window for Bs candidates"};
   Configurable<int> selectionFlagDs{"selectionFlagDs", 1, "Selection Flag for Ds"};
   // magnetic field setting from CCDB
@@ -62,6 +71,8 @@ struct HfCandidateCreatorBs {
   Configurable<std::string> ccdbPathGrp{"ccdbPathGrp", "GLO/GRP/GRP", "Path of the grp file (Run 2)"};
   Configurable<std::string> ccdbPathGrpMag{"ccdbPathGrpMag", "GLO/Config/GRPMagField", "CCDB path of the GRPMagField object (Run 3)"};
 
+  o2::vertexing::DCAFitterN<2> df2; // 2-prong vertex fitter
+  o2::vertexing::DCAFitterN<3> df3; // 3-prong vertex fitter
   HfHelper hfHelper;
   Service<o2::ccdb::BasicCCDBManager> ccdb;
   o2::base::MatLayerCylSet* lut;
@@ -82,6 +93,9 @@ struct HfCandidateCreatorBs {
   Preslice<CandsDsFiltered> candsDsPerCollision = aod::track_association::collisionId;
   Preslice<aod::TrackAssoc> trackIndicesPerCollision = aod::track_association::collisionId;
 
+  std::shared_ptr<TH1> hCandidatesD, hCandidatesB;
+  HistogramRegistry registry{"registry"};
+
   OutputObj<TH1F> hMassDsToKKPi{TH1F("hMassDsToKKPi", "D_{s} candidates;inv. mass (K K #pi) (GeV/#it{c}^{2});entries", 500, 0., 5.)};
   OutputObj<TH1F> hPtDs{TH1F("hPtDs", "D_{s} candidates;D_{s} candidate #it{p}_{T} (GeV/#it{c});entries", 100, 0., 10.)};
   OutputObj<TH1F> hPtPion{TH1F("hPtPion", "#pi candidates;#pi candidate #it{p}_{T} (GeV/#it{c});entries", 100, 0., 10.)};
@@ -92,14 +106,39 @@ struct HfCandidateCreatorBs {
 
   void init(InitContext const&)
   {
-    massPi = o2::analysis::pdg::MassPiPlus;
-    massDs = o2::analysis::pdg::MassDSBar;
-    massBs = o2::analysis::pdg::MassBS;
+    massPi = MassPiPlus;
+    massDs = MassDSBar;
+    massBs = MassBS;
+
+    // Initialise fitter for Bs vertex (2-prong vertex fitter)
+    df2.setPropagateToPCA(propagateToPCA);
+    df2.setMaxR(maxR);
+    df2.setMaxDZIni(maxDZIni);
+    df2.setMinParamChange(minParamChange);
+    df2.setMinRelChi2Change(minRelChi2Change);
+    df2.setUseAbsDCA(useAbsDCABs);
+    df2.setWeightedFinalPCA(useWeightedFinalPCA);
+
+    // Initialise fitter to redo Ds-vertex to get extrapolated daughter tracks (3-prong vertex fitter)
+    df3.setPropagateToPCA(propagateToPCA);
+    df3.setMaxR(maxR);
+    df3.setMaxDZIni(maxDZIni);
+    df3.setMinParamChange(minParamChange);
+    df3.setMinRelChi2Change(minRelChi2Change);
+    df3.setUseAbsDCA(useAbsDCADs);
+    df3.setWeightedFinalPCA(useWeightedFinalPCA);
+
     ccdb->setURL(ccdbUrl);
     ccdb->setCaching(true);
     ccdb->setLocalObjectValidityChecking();
     lut = o2::base::MatLayerCylSet::rectifyPtrFromFile(ccdb->get<o2::base::MatLayerCylSet>(ccdbPathLut));
     runNumber = 0;
+
+    /// candidate monitoring
+    hCandidatesD = registry.add<TH1>("hCandidatesD", "D candidate counter", {HistType::kTH1D, {axisCands}});
+    hCandidatesB = registry.add<TH1>("hCandidatesB", "B candidate counter", {HistType::kTH1D, {axisCands}});
+    setLabelHistoCands(hCandidatesD);
+    setLabelHistoCands(hCandidatesB);
   }
 
   /// Single-track cuts for pions on dcaXY
@@ -128,26 +167,6 @@ struct HfCandidateCreatorBs {
                TracksWithSel const&,
                aod::BCsWithTimestamps const&)
   {
-    // Initialise fitter for Bs vertex (2-prong vertex filter)
-    o2::vertexing::DCAFitterN<2> df2;
-    df2.setPropagateToPCA(propagateToPCA);
-    df2.setMaxR(maxR);
-    df2.setMaxDZIni(maxDZIni);
-    df2.setMinParamChange(minParamChange);
-    df2.setMinRelChi2Change(minRelChi2Change);
-    df2.setUseAbsDCA(useAbsDCABs);
-    df2.setWeightedFinalPCA(useWeightedFinalPCA);
-
-    // Initialise fitter to redo Ds-vertex to get extrapolated daughter tracks (3-prong vertex filter)
-    o2::vertexing::DCAFitterN<3> df3;
-    df3.setPropagateToPCA(propagateToPCA);
-    df3.setMaxR(maxR);
-    df3.setMaxDZIni(maxDZIni);
-    df3.setMinParamChange(minParamChange);
-    df3.setMinRelChi2Change(minRelChi2Change);
-    df3.setUseAbsDCA(useAbsDCADs);
-    df3.setWeightedFinalPCA(useWeightedFinalPCA);
-
     for (const auto& collision : collisions) {
       auto primaryVertex = getPrimaryVertex(collision);
       auto covMatrixPV = primaryVertex.getCov();
@@ -178,9 +197,9 @@ struct HfCandidateCreatorBs {
         auto trackParCov1 = getTrackParCov(track1);
         auto trackParCov2 = getTrackParCov(track2);
 
-        std::array<float, 3> pVec0 = {track0.px(), track0.py(), track0.pz()};
-        std::array<float, 3> pVec1 = {track1.px(), track1.py(), track1.pz()};
-        std::array<float, 3> pVec2 = {track2.px(), track2.py(), track2.pz()};
+        std::array<float, 3> pVec0 = track0.pVector();
+        std::array<float, 3> pVec1 = track1.pVector();
+        std::array<float, 3> pVec2 = track2.pVector();
 
         auto dca0 = o2::dataformats::DCA(track0.dcaXY(), track0.dcaZ(), track0.cYY(), track0.cZY(), track0.cZZ());
         auto dca1 = o2::dataformats::DCA(track1.dcaXY(), track1.dcaZ(), track1.cYY(), track1.cZY(), track1.cZZ());
@@ -201,9 +220,17 @@ struct HfCandidateCreatorBs {
 
         // ---------------------------------
         // reconstruct 3-prong secondary vertex (Ds±)
-        if (df3.process(trackParCov0, trackParCov1, trackParCov2) == 0) {
+        hCandidatesD->Fill(SVFitting::BeforeFit);
+        try {
+          if (df3.process(trackParCov0, trackParCov1, trackParCov2) == 0) {
+            continue;
+          }
+        } catch (const std::runtime_error& error) {
+          LOG(info) << "Run time error found: " << error.what() << ". DCAFitterN for D cannot work, skipping the candidate.";
+          hCandidatesD->Fill(SVFitting::Fail);
           continue;
         }
+        hCandidatesD->Fill(SVFitting::FitOk);
 
         const auto& secondaryVertexDs = df3.getPCACandidate();
         // propagate the 3 prongs to the secondary vertex
@@ -251,14 +278,22 @@ struct HfCandidateCreatorBs {
             continue;
           }
 
-          std::array<float, 3> pVecPion = {trackPion.px(), trackPion.py(), trackPion.pz()};
+          std::array<float, 3> pVecPion = trackPion.pVector();
           auto trackParCovPi = getTrackParCov(trackPion);
 
           // ---------------------------------
           // reconstruct the 2-prong Bs vertex
-          if (df2.process(trackParCovDs, trackParCovPi) == 0) {
+          hCandidatesB->Fill(SVFitting::BeforeFit);
+          try {
+            if (df2.process(trackParCovDs, trackParCovPi) == 0) {
+              continue;
+            }
+          } catch (const std::runtime_error& error) {
+            LOG(info) << "Run time error found: " << error.what() << ". DCAFitterN for B cannot work, skipping the candidate.";
+            hCandidatesB->Fill(SVFitting::Fail);
             continue;
           }
+          hCandidatesB->Fill(SVFitting::FitOk);
 
           // calculate relevant properties
           const auto& secondaryVertexBs = df2.getPCACandidate();
@@ -290,8 +325,6 @@ struct HfCandidateCreatorBs {
           auto errorDecayLength = std::sqrt(getRotatedCovMatrixXX(covMatrixPV, phi, theta) + getRotatedCovMatrixXX(covMatrixPCA, phi, theta));
           auto errorDecayLengthXY = std::sqrt(getRotatedCovMatrixXX(covMatrixPV, phi, 0.) + getRotatedCovMatrixXX(covMatrixPCA, phi, 0.));
 
-          int hfFlag = BIT(hf_cand_bs::DecayType::BsToDsPi);
-
           // fill output histograms for Bs candidates
           hMassDsToKKPi->Fill(hfHelper.invMassDsToKKPi(candDs), candDs.pt());
           hCovSVXX->Fill(covMatrixPCA[0]);
@@ -310,14 +343,14 @@ struct HfCandidateCreatorBs {
                            pVecDs[0], pVecDs[1], pVecDs[2],
                            pVecPion[0], pVecPion[1], pVecPion[2],
                            dcaDs.getY(), dcaPion.getY(),
-                           std::sqrt(dcaDs.getSigmaY2()), std::sqrt(dcaPion.getSigmaY2()),
-                           candDs.globalIndex(), trackPion.globalIndex(),
-                           hfFlag);
+                           std::sqrt(dcaDs.getSigmaY2()), std::sqrt(dcaPion.getSigmaY2()));
+
+          rowCandidateProngs(candDs.globalIndex(), trackPion.globalIndex());
         } // pi loop
-      }   // Ds loop
-    }     // collision loop
-  }       // process
-};        // struct
+      } // Ds loop
+    } // collision loop
+  } // process
+}; // struct
 
 /// Extends the base table with expression columns and performs MC matching.
 struct HfCandidateCreatorBsExpressions {
@@ -327,23 +360,20 @@ struct HfCandidateCreatorBsExpressions {
 
   void init(InitContext const&) {}
 
-  void processMc(aod::HfCand3Prong const& ds,
-                 aod::TracksWMc const& tracks,
-                 aod::McParticles const& mcParticles)
+  void processMc(aod::HfCand3Prong const&,
+                 aod::TracksWMc const&,
+                 aod::McParticles const& mcParticles,
+                 aod::HfCandBsProngs const& candsBs)
   {
-    rowCandidateBs->bindExternalIndices(&tracks);
-    rowCandidateBs->bindExternalIndices(&ds);
-
     int indexRec = -1;
     int8_t sign = 0;
     int8_t flag = 0;
     std::vector<int> arrDaughDsIndex;
     std::array<int, 2> arrPDGDaughDs;
-    std::array<int, 2> arrPDGResonantDsPhiPi = {pdg::Code::kPhi, kPiPlus}; // Ds± → Phi π±
+    std::array<int, 2> arrPDGResonantDsPhiPi = {Pdg::kPhi, kPiPlus}; // Ds± → Phi π±
 
     // Match reconstructed candidates.
-    // Spawned table can be used directly
-    for (const auto& candidate : *rowCandidateBs) {
+    for (const auto& candidate : candsBs) {
       flag = 0;
       arrDaughDsIndex.clear();
       auto candDs = candidate.prong0();
@@ -356,10 +386,10 @@ struct HfCandidateCreatorBsExpressions {
                                          candDs.prong2_as<aod::TracksWMc>()};
 
       // Checking Bs0(bar) → Ds∓ π± → (K- K+ π∓) π±
-      indexRec = RecoDecay::getMatchedMCRec(mcParticles, arrayDaughtersBs, pdg::Code::kBS, std::array{-kKPlus, +kKPlus, -kPiPlus, +kPiPlus}, true, &sign, 3);
+      indexRec = RecoDecay::getMatchedMCRec(mcParticles, arrayDaughtersBs, Pdg::kBS, std::array{-kKPlus, +kKPlus, -kPiPlus, +kPiPlus}, true, &sign, 3);
       if (indexRec > -1) {
         // Checking Ds∓ → K- K+ π∓
-        indexRec = RecoDecay::getMatchedMCRec(mcParticles, arrayDaughtersDs, pdg::Code::kDSBar, std::array{-kKPlus, +kKPlus, -kPiPlus}, true, &sign, 2);
+        indexRec = RecoDecay::getMatchedMCRec(mcParticles, arrayDaughtersDs, Pdg::kDSBar, std::array{-kKPlus, +kKPlus, -kPiPlus}, true, &sign, 2);
         if (indexRec > -1) {
           RecoDecay::getDaughters(mcParticles.rawIteratorAt(indexRec), &arrDaughDsIndex, std::array{0}, 1);
           if (arrDaughDsIndex.size() == 2) {
@@ -368,7 +398,7 @@ struct HfCandidateCreatorBsExpressions {
               arrPDGDaughDs[iProng] = std::abs(daughI.pdgCode());
             }
             if ((arrPDGDaughDs[0] == arrPDGResonantDsPhiPi[0] && arrPDGDaughDs[1] == arrPDGResonantDsPhiPi[1]) || (arrPDGDaughDs[0] == arrPDGResonantDsPhiPi[1] && arrPDGDaughDs[1] == arrPDGResonantDsPhiPi[0])) {
-              flag = sign * BIT(hf_cand_bs::DecayTypeMc::BsToDsPiToKKPiPi);
+              flag = sign * BIT(hf_cand_bs::DecayTypeMc::BsToDsPiToPhiPiPiToKKPiPi);
             }
           }
         }
@@ -376,10 +406,10 @@ struct HfCandidateCreatorBsExpressions {
 
       if (!flag) {
         // Checking B0(bar) → Ds± π∓ → (K- K+ π±) π∓
-        indexRec = RecoDecay::getMatchedMCRec(mcParticles, arrayDaughtersBs, pdg::Code::kB0, std::array{-kKPlus, +kKPlus, +kPiPlus, -kPiPlus}, true, &sign, 3);
+        indexRec = RecoDecay::getMatchedMCRec(mcParticles, arrayDaughtersBs, Pdg::kB0, std::array{-kKPlus, +kKPlus, +kPiPlus, -kPiPlus}, true, &sign, 3);
         if (indexRec > -1) {
           // Checking Ds± → K- K+ π±
-          indexRec = RecoDecay::getMatchedMCRec(mcParticles, arrayDaughtersDs, pdg::Code::kDS, std::array{-kKPlus, +kKPlus, +kPiPlus}, true, &sign, 2);
+          indexRec = RecoDecay::getMatchedMCRec(mcParticles, arrayDaughtersDs, Pdg::kDS, std::array{-kKPlus, +kKPlus, +kPiPlus}, true, &sign, 2);
           if (indexRec > -1) {
             RecoDecay::getDaughters(mcParticles.rawIteratorAt(indexRec), &arrDaughDsIndex, std::array{0}, 1);
             if (arrDaughDsIndex.size() == 2) {
@@ -388,7 +418,7 @@ struct HfCandidateCreatorBsExpressions {
                 arrPDGDaughDs[iProng] = std::abs(daughI.pdgCode());
               }
               if ((arrPDGDaughDs[0] == arrPDGResonantDsPhiPi[0] && arrPDGDaughDs[1] == arrPDGResonantDsPhiPi[1]) || (arrPDGDaughDs[0] == arrPDGResonantDsPhiPi[1] && arrPDGDaughDs[1] == arrPDGResonantDsPhiPi[0])) {
-                flag = sign * BIT(hf_cand_bs::DecayTypeMc::B0ToDsPiToKKPiPi);
+                flag = sign * BIT(hf_cand_bs::DecayTypeMc::B0ToDsPiToPhiPiPiToKKPiPi);
               }
             }
           }
@@ -403,7 +433,7 @@ struct HfCandidateCreatorBsExpressions {
         auto particleProng2 = arrayDaughtersBs[2].mcParticle();
         auto particleProng3 = arrayDaughtersBs[3].mcParticle();
         // b-hadron hypothesis
-        std::array<int, 4> bHadronMotherHypos = {pdg::Code::kB0, pdg::Code::kBPlus, pdg::Code::kBS, pdg::Code::kLambdaB0};
+        std::array<int, 4> bHadronMotherHypos = {Pdg::kB0, Pdg::kBPlus, Pdg::kBS, Pdg::kLambdaB0};
 
         for (const auto& bHadronMotherHypo : bHadronMotherHypos) {
           int index0Mother = RecoDecay::getMother(mcParticles, particleProng0, bHadronMotherHypo, true);
@@ -430,10 +460,10 @@ struct HfCandidateCreatorBsExpressions {
       arrDaughDsIndex.clear();
 
       // Checking Bs0(bar) → Ds∓ π± → (K- K+ π∓) π±
-      if (RecoDecay::isMatchedMCGen(mcParticles, particle, pdg::Code::kBS, std::array{+pdg::Code::kDSBar, +kPiPlus}, true)) {
+      if (RecoDecay::isMatchedMCGen(mcParticles, particle, Pdg::kBS, std::array{+Pdg::kDSBar, +kPiPlus}, true)) {
         // Checking Ds∓ → K- K+ π∓
         auto candDsMC = mcParticles.rawIteratorAt(particle.daughtersIds().front());
-        if (RecoDecay::isMatchedMCGen(mcParticles, candDsMC, pdg::Code::kDSBar, std::array{-kKPlus, +kKPlus, -kPiPlus}, true, &sign, 2)) {
+        if (RecoDecay::isMatchedMCGen(mcParticles, candDsMC, Pdg::kDSBar, std::array{-kKPlus, +kKPlus, -kPiPlus}, true, &sign, 2)) {
           RecoDecay::getDaughters(candDsMC, &arrDaughDsIndex, std::array{0}, 1);
           if (arrDaughDsIndex.size() == 2) {
             for (auto jProng = 0u; jProng < arrDaughDsIndex.size(); ++jProng) {
@@ -441,7 +471,7 @@ struct HfCandidateCreatorBsExpressions {
               arrPDGDaughDs[jProng] = std::abs(daughJ.pdgCode());
             }
             if ((arrPDGDaughDs[0] == arrPDGResonantDsPhiPi[0] && arrPDGDaughDs[1] == arrPDGResonantDsPhiPi[1]) || (arrPDGDaughDs[0] == arrPDGResonantDsPhiPi[1] && arrPDGDaughDs[1] == arrPDGResonantDsPhiPi[0])) {
-              flag = sign * BIT(hf_cand_bs::DecayTypeMc::BsToDsPiToKKPiPi);
+              flag = sign * BIT(hf_cand_bs::DecayTypeMc::BsToDsPiToPhiPiPiToKKPiPi);
             }
           }
         }
@@ -449,10 +479,10 @@ struct HfCandidateCreatorBsExpressions {
 
       if (!flag) {
         // Checking B0(bar) → Ds± π∓ → (K- K+ π±) π∓
-        if (RecoDecay::isMatchedMCGen(mcParticles, particle, pdg::Code::kB0, std::array{+pdg::Code::kDS, -kPiPlus}, true)) {
+        if (RecoDecay::isMatchedMCGen(mcParticles, particle, Pdg::kB0, std::array{+Pdg::kDS, -kPiPlus}, true)) {
           // Checking Ds± → K- K+ π±
           auto candDsMC = mcParticles.rawIteratorAt(particle.daughtersIds().front());
-          if (RecoDecay::isMatchedMCGen(mcParticles, candDsMC, pdg::Code::kDS, std::array{-kKPlus, +kKPlus, +kPiPlus}, true, &sign, 2)) {
+          if (RecoDecay::isMatchedMCGen(mcParticles, candDsMC, Pdg::kDS, std::array{-kKPlus, +kKPlus, +kPiPlus}, true, &sign, 2)) {
             RecoDecay::getDaughters(candDsMC, &arrDaughDsIndex, std::array{0}, 1);
             if (arrDaughDsIndex.size() == 2) {
               for (auto jProng = 0u; jProng < arrDaughDsIndex.size(); ++jProng) {
@@ -460,7 +490,7 @@ struct HfCandidateCreatorBsExpressions {
                 arrPDGDaughDs[jProng] = std::abs(daughJ.pdgCode());
               }
               if ((arrPDGDaughDs[0] == arrPDGResonantDsPhiPi[0] && arrPDGDaughDs[1] == arrPDGResonantDsPhiPi[1]) || (arrPDGDaughDs[0] == arrPDGResonantDsPhiPi[1] && arrPDGDaughDs[1] == arrPDGResonantDsPhiPi[0])) {
-                flag = sign * BIT(hf_cand_bs::DecayTypeMc::B0ToDsPiToKKPiPi);
+                flag = sign * BIT(hf_cand_bs::DecayTypeMc::B0ToDsPiToPhiPiPiToKKPiPi);
               }
             }
           }
@@ -469,7 +499,7 @@ struct HfCandidateCreatorBsExpressions {
 
       rowMcMatchGen(flag);
     } // gen
-  }   // processMc
+  } // processMc
   PROCESS_SWITCH(HfCandidateCreatorBsExpressions, processMc, "Process MC", false);
 }; // struct
 

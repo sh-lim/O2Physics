@@ -17,6 +17,8 @@
 ///
 /// \note based on taskD0.cxx, taskLc.cxx
 
+#include <vector>
+
 #include "Framework/AnalysisTask.h"
 #include "Framework/HistogramRegistry.h"
 #include "Framework/runDataProcessing.h"
@@ -353,7 +355,7 @@ struct HfTaskLcToK0sP {
 
   void processMc(soa::Filtered<soa::Join<aod::HfCandCascExt, aod::HfSelLcToK0sP, aod::HfCandCascadeMcRec>> const& candidates,
                  soa::Join<aod::McParticles, aod::HfCandCascadeMcGen> const& mcParticles,
-                 aod::TracksWMc const& tracks,
+                 aod::TracksWMc const&,
                  TracksWPid const&)
   {
     // MC rec.

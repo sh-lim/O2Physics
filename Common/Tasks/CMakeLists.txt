@@ -39,6 +39,11 @@ o2physics_add_dpl_workflow(multiplicity-qa
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2::DetectorsBase
                     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(multiplicity-derived-qa
+                    SOURCES multiplicityDerivedQa.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2::DetectorsBase
+                    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(centrality-qa
                     SOURCES centralityQa.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2::DetectorsBase
@@ -74,7 +79,12 @@ o2physics_add_dpl_workflow(qvectors-correction
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
                     COMPONENT_NAME Analysis)
 
-o2physics_add_dpl_workflow(evtplanes-resolution
-                    SOURCES evtPlanesResolution.cxx
+o2physics_add_dpl_workflow(centrality-study
+                    SOURCES centralityStudy.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(flow-test
+                    SOURCES flowTest.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
                     COMPONENT_NAME Analysis)

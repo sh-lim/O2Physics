@@ -56,8 +56,8 @@ struct HfTaskSingleMuonSelectionAmbiguousMftIndexBuilder {
 };
 
 struct HfTaskSingleMuon {
-  Configurable<uint8_t> trkType{"trkType", 0, "Muon track type, valid values are 0, 1, 2, 3 and 4"};
-  Configurable<uint8_t> mcMaskSelection{"mcMaskSelection", 0, "McMask for correct match, valid values are 0 and 128"};
+  Configurable<uint> trkType{"trkType", 0u, "Muon track type, valid values are 0, 1, 2, 3 and 4"};
+  Configurable<uint> mcMaskSelection{"mcMaskSelection", 0u, "McMask for correct match, valid values are 0 and 128"};
   Configurable<float> etaMin{"etaMin", -3.6, "eta minimum value"};
   Configurable<float> etaMax{"etaMax", -2.5, "eta maximum value"};
   Configurable<float> pDcaMin{"pDcaMin", 324., "p*DCA maximum value for small Rabs"};
@@ -116,7 +116,7 @@ struct HfTaskSingleMuon {
   }
 
   template <typename TCollision, typename TMFT, typename TMuons>
-  void runMuonSel(TCollision const& collision, TMFT const& tracksMFT, TMuons const& muons)
+  void runMuonSel(TCollision const& collision, TMFT const& /*tracksMFT*/, TMuons const& muons)
   {
     if (!collision.sel8()) {
       return;
@@ -175,7 +175,7 @@ struct HfTaskSingleMuon {
   }
 
   template <typename TCollision, typename TMFT, typename TMuons, typename TMC>
-  void runMuonSelMc(TCollision const& collision, TMFT const& tracksMFT, TMuons const& muons, TMC const& mc)
+  void runMuonSelMc(TCollision const& collision, TMFT const& /*tracksMFT*/, TMuons const& muons, TMC const& /*mc*/)
   {
     if (!collision.sel8()) {
       return;

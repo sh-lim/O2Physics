@@ -16,6 +16,9 @@
 /// \author Rik Spijkers <r.spijkers@students.uu.nl>, Utrecht University
 /// \author Luca Micheletti <luca.micheletti@to.infn.it>, INFN
 
+#include <vector>
+
+#include "CommonConstants/PhysicsConstants.h"
 #include "Framework/AnalysisTask.h"
 #include "Framework/runDataProcessing.h"
 
@@ -46,7 +49,7 @@ struct HfCandidateSelectorXToJpsiPiPi {
   Configurable<double> nSigmaTofMax{"nSigmaTofMax", 3., "Nsigma cut on TOF only"};
   // topological cuts
   Configurable<std::vector<double>> binsPt{"binsPt", std::vector<double>{hf_cuts_x_to_jpsi_pi_pi::vecBinsPt}, "pT bin limits"};
-  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_x_to_jpsi_pi_pi::cuts[0], hf_cuts_x_to_jpsi_pi_pi::nBinsPt, hf_cuts_x_to_jpsi_pi_pi::nCutVars, hf_cuts_x_to_jpsi_pi_pi::labelsPt, hf_cuts_x_to_jpsi_pi_pi::labelsCutVar}, "Jpsi candidate selection per pT bin"};
+  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_x_to_jpsi_pi_pi::Cuts[0], hf_cuts_x_to_jpsi_pi_pi::NBinsPt, hf_cuts_x_to_jpsi_pi_pi::NCutVars, hf_cuts_x_to_jpsi_pi_pi::labelsPt, hf_cuts_x_to_jpsi_pi_pi::labelsCutVar}, "Jpsi candidate selection per pT bin"};
 
   HfHelper hfHelper;
 
@@ -57,7 +60,7 @@ struct HfCandidateSelectorXToJpsiPiPi {
   /// \param track is daughter track
   /// \return true if track is good
   template <typename T>
-  bool daughterSelection(const T& track)
+  bool daughterSelection(const T& /*track*/)
   {
     return true;
   }
@@ -83,7 +86,7 @@ struct HfCandidateSelectorXToJpsiPiPi {
       return false; // check that the candidate pT is within the analysis range
     }
 
-    if (std::abs(hfHelper.invMassXToJpsiPiPi(hfCandX) - o2::analysis::pdg::MassX3872) > cuts->get(pTBin, "m")) {
+    if (std::abs(hfHelper.invMassXToJpsiPiPi(hfCandX) - o2::constants::physics::MassX3872) > cuts->get(pTBin, "m")) {
       // LOGF(debug, "X topol selection failed at mass diff check");
       return false; // check that mass difference is within bounds
     }
@@ -191,7 +194,7 @@ struct HfCandidateSelectorXToJpsiPiPi {
 
   void process(aod::HfCandX const& hfCandXs,
                aod::HfCand2Prong const&,
-               TracksSel const& tracks)
+               TracksSel const&)
   {
     for (const auto& hfCandX : hfCandXs) { // looping over X candidates
       // note the difference between Jpsi (index0) and pions (index1,2)

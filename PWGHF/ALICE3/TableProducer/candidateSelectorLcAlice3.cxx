@@ -16,6 +16,9 @@
 /// \author Nima Zardoshti <nima.zardoshti@cern.ch>, CERN
 /// \author Vít Kučera <vit.kucera@cern.ch>, CERN
 
+#include <vector>
+
+#include "CommonConstants/PhysicsConstants.h"
 #include "Framework/AnalysisTask.h"
 #include "Framework/runDataProcessing.h"
 
@@ -66,7 +69,7 @@ struct HfCandidateSelectorLcAlice3 {
   // topological cuts
   Configurable<double> decayLengthXYNormalisedMin{"decayLengthXYNormalisedMin", 3., "Min. normalised decay length"};
   Configurable<std::vector<double>> binsPt{"binsPt", std::vector<double>{hf_cuts_lc_to_p_k_pi::vecBinsPt}, "pT bin limits"};
-  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_lc_to_p_k_pi::cuts[0], hf_cuts_lc_to_p_k_pi::nBinsPt, hf_cuts_lc_to_p_k_pi::nCutVars, hf_cuts_lc_to_p_k_pi::labelsPt, hf_cuts_lc_to_p_k_pi::labelsCutVar}, "Lc candidate selection per pT bin"};
+  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_lc_to_p_k_pi::Cuts[0], hf_cuts_lc_to_p_k_pi::NBinsPt, hf_cuts_lc_to_p_k_pi::NCutVars, hf_cuts_lc_to_p_k_pi::labelsPt, hf_cuts_lc_to_p_k_pi::labelsCutVar}, "Lc candidate selection per pT bin"};
 
   HfHelper hfHelper;
 
@@ -133,11 +136,11 @@ struct HfCandidateSelectorLcAlice3 {
     }
 
     if (trackProton.globalIndex() == candidate.prong0Id()) {
-      if (std::abs(hfHelper.invMassLcToPKPi(candidate) - o2::analysis::pdg::MassLambdaCPlus) > cuts->get(pTBin, "m")) {
+      if (std::abs(hfHelper.invMassLcToPKPi(candidate) - o2::constants::physics::MassLambdaCPlus) > cuts->get(pTBin, "m")) {
         return false;
       }
     } else {
-      if (std::abs(hfHelper.invMassLcToPiKP(candidate) - o2::analysis::pdg::MassLambdaCPlus) > cuts->get(pTBin, "m")) {
+      if (std::abs(hfHelper.invMassLcToPiKP(candidate) - o2::constants::physics::MassLambdaCPlus) > cuts->get(pTBin, "m")) {
         return false;
       }
     }
@@ -146,8 +149,8 @@ struct HfCandidateSelectorLcAlice3 {
   }
 
   void process(aod::HfCand3Prong const& candidates,
-               TracksSel const& barreltracks,
-               aod::McParticles const& mcParticles,
+               TracksSel const&,
+               aod::McParticles const&,
                aod::RICHs const&,
                aod::FRICHs const&)
   {

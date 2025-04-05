@@ -45,6 +45,7 @@ class TrackSelection
     kGoldenChi2,
     kDCAxy,
     kDCAz,
+    kTPCFracSharedCls,
     kNCuts
   };
 
@@ -53,7 +54,8 @@ class TrackSelection
     Run3ITSibAny,
     Run3ITSallAny,
     Run3ITSall7Layers,
-    Run3ITSibTwo
+    Run3ITSibTwo,
+    Run3ITSibFirst
   };
 
   // Flags for the selection of the DCAxy
@@ -113,6 +115,9 @@ class TrackSelection
     if (!IsSelected(track, TrackCuts::kDCAz)) {
       return false;
     }
+    if (!IsSelected(track, TrackCuts::kTPCFracSharedCls)) {
+      return false;
+    }
     return true;
   }
 
@@ -143,6 +148,7 @@ class TrackSelection
     setFlag(TrackCuts::kGoldenChi2);
     setFlag(TrackCuts::kDCAxy);
     setFlag(TrackCuts::kDCAz);
+    setFlag(TrackCuts::kTPCFracSharedCls);
 
     return flag;
   }
@@ -194,10 +200,12 @@ class TrackSelection
         return (isRun2 && mRequireGoldenChi2) ? (track.flags() & o2::aod::track::GoldenChi2) : true;
 
       case TrackCuts::kDCAxy:
-        return abs(track.dcaXY()) <= ((mMaxDcaXYPtDep) ? mMaxDcaXYPtDep(track.pt()) : mMaxDcaXY);
+        return std::fabs(track.dcaXY()) <= ((mMaxDcaXYPtDep) ? mMaxDcaXYPtDep(track.pt()) : mMaxDcaXY);
 
       case TrackCuts::kDCAz:
-        return abs(track.dcaZ()) <= mMaxDcaZ;
+        return std::fabs(track.dcaZ()) <= mMaxDcaZ;
+      case TrackCuts::kTPCFracSharedCls:
+        return track.tpcFractionSharedCls() <= mMaxTPCFractionSharedCls;
 
       default:
         return false;
@@ -224,6 +232,7 @@ class TrackSelection
   void SetRequireNoHitsInITSLayers(std::set<uint8_t> excludedLayers);
   /// @brief Reset ITS requirements
   void ResetITSRequirements() { mRequiredITSHits.clear(); }
+  void SetMaxTPCFractionSharedCls(float maxTPCFractionSharedCls);
 
   /// @brief Print the track selection
   void print() const;
@@ -248,6 +257,8 @@ class TrackSelection
   float mMaxDcaXY{1e10f};                       // max dca in xy plane
   float mMaxDcaZ{1e10f};                        // max dca in z direction
   std::function<float(float)> mMaxDcaXYPtDep{}; // max dca in xy plane as function of pT
+
+  float mMaxTPCFractionSharedCls{1e10f}; // max fraction of shared TPC clusters
 
   bool mRequireITSRefit{false};   // require refit in ITS
   bool mRequireTPCRefit{false};   // require refit in TPC
